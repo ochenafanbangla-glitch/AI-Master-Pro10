@@ -12,13 +12,19 @@ from utils.multi_manager import MultiManagerSystem
 import threading
 
 # Configure Logging
+# On Vercel, writing to a local file might fail, so we use StreamHandler for console logs
+IS_VERCEL = "VERCEL" in os.environ
+log_handlers = [logging.StreamHandler()]
+if not IS_VERCEL:
+    try:
+        log_handlers.append(logging.FileHandler("app_error.log"))
+    except:
+        pass
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler("app_error.log"),
-        logging.StreamHandler()
-    ]
+    handlers=log_handlers
 )
 logger = logging.getLogger(__name__)
 
@@ -27,11 +33,24 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ai-master-pro-secure-key-2026")
 
 # Initialize AI Models and Multi-Manager System
-model_a = ModelACore()
-manager_system = MultiManagerSystem(model_a, DB_PATH)
+# We initialize inside a function or check for existence to avoid issues during build/cold start
+model_a = None
+manager_system = None
+
+def get_systems():
+    global model_a, manager_system
+    if model_a is None:
+        model_a = ModelACore()
+        # Ensure DB is initialized
+        if not os.path.exists(DB_PATH):
+            init_db()
+    if manager_system is None:
+        manager_system = MultiManagerSystem(model_a, DB_PATH)
+    return model_a, manager_system
 
 @app.before_request
 def ensure_session():
+    get_systems() # Ensure systems are ready before any request
     """Ensures every user has a unique session ID and tracking info."""
     if "session_id" not in session:
         session["session_id"] = str(uuid.uuid4())
@@ -121,8 +140,9 @@ def get_signal():
             })
 
         # Get raw signal from AI Core and process through Multi-Manager (CID/PEM)
-        raw_signal = model_a.predict()
-        processed_signal = manager_system.process_signal(raw_signal)
+        m_a, m_s = get_systems()
+        raw_signal = m_a.predict()
+        processed_signal = m_s.process_signal(raw_signal)
         
         # PAUSED logic removed as per user request
 
@@ -208,13 +228,22 @@ def submit_result():
     try:
         if add_trade(trade_data):
             # Always trigger AI learning after a trade is added
-            threading.Thread(target=model_a.train_from_db).start()
+            m_a, _ = get_systems()
+            if IS_VERCEL:
+                # On Vercel, background threads might be killed immediately. 
+                # We do it synchronously or skip for performance if needed.
+                m_a.train_from_db()
+            else:
+                threading.Thread(target=m_a.train_from_db).start()
             
             if last_signal:
                 is_correct = (last_signal["prediction"] == actual_result)
                 if not is_correct:
                     # If prediction was wrong, trigger an additional training for faster adaptation
-                    threading.Thread(target=model_a.train_from_db).start()
+                    if IS_VERCEL:
+                        m_a.train_from_db()
+                    else:
+                        threading.Thread(target=m_a.train_from_db).start()
                 session.pop("last_signal", None)
                 msg = "Correct Prediction! AI refined." if is_correct else "AI corrected its mistake."
             else:

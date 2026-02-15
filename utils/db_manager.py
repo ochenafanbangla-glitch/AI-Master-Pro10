@@ -1,17 +1,40 @@
 import sqlite3
 import os
+import shutil
 from datetime import datetime, timedelta, timezone
 
 # Database path configuration
-DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'database.db')
+# On Vercel, the root directory is read-only. We must use /tmp for SQLite writes.
+IS_VERCEL = "VERCEL" in os.environ
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+ORIGINAL_DB_PATH = os.path.join(BASE_DIR, 'database.db')
+
+if IS_VERCEL:
+    DB_PATH = '/tmp/database.db'
+    # Copy the original database to /tmp if it doesn't exist there yet
+    if not os.path.exists(DB_PATH) and os.path.exists(ORIGINAL_DB_PATH):
+        shutil.copy2(ORIGINAL_DB_PATH, DB_PATH)
+else:
+    DB_PATH = ORIGINAL_DB_PATH
 
 def get_db_connection():
     """Creates and returns a sqlite3 connection with Row factory and timeout for concurrency."""
-    conn = sqlite3.connect(DB_PATH, timeout=10)
+    # Ensure the directory exists (mostly for local development)
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir and not os.path.exists(db_dir):
+        os.makedirs(db_dir, exist_ok=True)
+        
+    conn = sqlite3.connect(DB_PATH, timeout=20) # Increased timeout for serverless
     conn.row_factory = sqlite3.Row
+    
     # Enable WAL mode and other optimizations for better concurrency and speed
-    conn.execute('PRAGMA journal_mode=WAL')
-    conn.execute('PRAGMA synchronous=NORMAL')
+    # Note: WAL mode might have issues on some network filesystems, but /tmp is usually fine.
+    try:
+        conn.execute('PRAGMA journal_mode=WAL')
+        conn.execute('PRAGMA synchronous=NORMAL')
+    except sqlite3.Error:
+        pass # Fallback if WAL is not supported
+        
     conn.execute('PRAGMA cache_size=-2000') # 2MB cache
     return conn
 

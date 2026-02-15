@@ -17,9 +17,27 @@ class ModelACore:
     """
     def __init__(self):
         self.name = "Model A (Advanced Lite AI)"
-        self.db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'database.db')
-        self.pattern_file = os.path.join(os.path.dirname(__file__), 'patterns.json')
-        self.performance_file = os.path.join(os.path.dirname(__file__), 'strategy_performance.json')
+        IS_VERCEL = "VERCEL" in os.environ
+        BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+        
+        if IS_VERCEL:
+            self.db_path = '/tmp/database.db'
+            self.pattern_file = '/tmp/patterns.json'
+            self.performance_file = '/tmp/strategy_performance.json'
+            
+            # Copy original files to /tmp for write access
+            orig_pattern = os.path.join(os.path.dirname(__file__), 'patterns.json')
+            orig_perf = os.path.join(os.path.dirname(__file__), 'strategy_performance.json')
+            
+            import shutil
+            if not os.path.exists(self.pattern_file) and os.path.exists(orig_pattern):
+                shutil.copy2(orig_pattern, self.pattern_file)
+            if not os.path.exists(self.performance_file) and os.path.exists(orig_perf):
+                shutil.copy2(orig_perf, self.performance_file)
+        else:
+            self.db_path = os.path.join(BASE_DIR, 'database.db')
+            self.pattern_file = os.path.join(os.path.dirname(__file__), 'patterns.json')
+            self.performance_file = os.path.join(os.path.dirname(__file__), 'strategy_performance.json')
         
         self.strategies = ["pattern", "trend", "fib", "rsi", "markov", "chaos", "streak_reversal"]
         self.patterns = self._load_patterns()
