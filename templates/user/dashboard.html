@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI MASTER PRO</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="dashboard-container">
+        <header>
+            <h1 class="app-title">AI MASTER PRO</h1>
+            <span class="version-badge">ULTRA PRO LEGEND v6.2 (Deep Scan)</span>
+        </header>
+
+        <!-- Trust & Performance Section -->
+        <div class="glass-card trust-card">
+            <div class="trust-header">
+                <span class="section-title">System Reliability</span>
+                <span class="accuracy-badge">Live Accuracy: <span id="live-accuracy">{{ accuracy }}%</span></span>
+            </div>
+            <div class="manager-status-grid">
+                <div class="manager-status-item">
+                    <span class="manager-name">CID Scanner</span>
+                    <span id="cid-status" class="status-indicator status-active">Online</span>
+                </div>
+                <div class="manager-status-item">
+                    <span class="manager-name">Risk Manager</span>
+                    <span id="risk-status" class="status-indicator status-active">Active</span>
+                </div>
+                <div class="manager-status-item">
+                    <span class="manager-name">Recovery Manager</span>
+                    <span id="recovery-status" class="status-indicator status-idle">Idle</span>
+                </div>
+            </div>
+            <div id="cid-alert-box" class="cid-alert-box" style="display: none;">
+                <div class="cid-alert-header">⚠️ CID SCANNER INTERVENTION</div>
+                <div id="cid-alert-msg" class="cid-alert-body">Blacklisted Pattern Detected! Reversing prediction.</div>
+            </div>
+            <div id="dragon-alert-box" class="dragon-alert-box" style="display: none;">
+                <div class="dragon-alert-header">🐉 DRAGON BREAKOUT ALERT</div>
+                <div id="dragon-alert-msg" class="dragon-alert-body">Dragon Pattern Detected! Monitoring for breakout.</div>
+            </div>
+        </div>
+
+        <!-- AI Learning Progress Section -->
+        <div class="glass-card learning-card">
+            <div class="learning-header">
+                <span class="section-title">AI Pattern Matrix</span>
+                <span class="learning-stats">{{ total_collected }} Patterns Tracked</span>
+            </div>
+            <div class="progress-container">
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" style="width: {{ learning_percent }}%;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-top: 5px;">
+                    <span class="progress-text" style="text-align: left;">PEM Learning (Min: 20)</span>
+                    <span class="progress-text">{{ learning_percent }}% Optimization</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Signal Section -->
+        <div class="glass-card">
+            <div style="display: flex; justify-content: space-between;">
+                <span class="section-title">Market Analysis</span>
+                <span id="current-pattern-badge" class="pattern-badge">Pattern: ---</span>
+            </div>
+            <div class="prediction-box">
+                <div id="prediction-display" class="prediction-value">{% if total_collected < target_trades %}WAIT{% else %}---{% endif %}</div>
+                <div class="confidence-container">
+                    <div class="confidence-label">
+                        <span>Confidence</span>
+                        <span id="confidence-text">0%</span>
+                    </div>
+                    <div class="confidence-bar-bg">
+                        <div id="confidence-bar" class="confidence-bar-fill"></div>
+                    </div>
+                </div>
+                <p style="font-size: 0.8rem; color: var(--text-secondary);">Source: <span id="source-text">{% if total_collected < target_trades %}Data Collection Phase{% else %}Waiting...{% endif %}</span></p>
+            </div>
+            <button id="get-signal-btn" class="btn-primary">GET SIGNAL</button>
+        </div>
+
+        <!-- Result Input Section -->
+        <div class="glass-card">
+            <span class="section-title">Confirm Market Result</span>
+            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 15px;">
+                Select the actual result to train the CID Matrix:
+            </p>
+            <div class="btn-group">
+                <button onclick="submitResult('BIG')" class="btn-result btn-big" {% if total_collected >= target_trades %}disabled{% endif %}>MARKET BIG</button>
+                <button onclick="submitResult('SMALL')" class="btn-result btn-small" {% if total_collected >= target_trades %}disabled{% endif %}>MARKET SMALL</button>
+            </div>
+        </div>
+
+        <!-- History Section -->
+        <div class="glass-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <span class="section-title" style="margin-bottom: 0;">Trade History</span>
+                <span style="font-size: 0.7rem; color: var(--text-secondary);">Recent 10</span>
+            </div>
+            
+            <div id="history-list" class="history-list">
+                {% if not trades %}
+                <p style="text-align: center; color: var(--text-secondary); font-size: 0.9rem; padding: 20px;">No trades yet. Get a signal to start!</p>
+                {% endif %}
+                
+                {% for trade in trades %}
+                <div class="history-item">
+                    <div class="item-info">
+                        <span class="item-main">{{ trade.ai_prediction }} → {{ trade.actual_result or '???' }}</span>
+                        <span class="item-sub">{{ trade.timestamp.split(' ')[1] if ' ' in trade.timestamp else trade.timestamp }} | Conf: {{ trade.ai_confidence }}%</span>
+                    </div>
+                    <div style="display: flex; align-items: center;">
+                        {% if trade.ai_prediction != 'INITIAL' %}
+                        <span class="item-status {{ 'status-win' if trade.actual_result == trade.ai_prediction else 'status-loss' }}">
+                            {{ 'WIN' if trade.actual_result == trade.ai_prediction else 'LOSS' }}
+                        </span>
+                        {% else %}
+                        <span class="item-status" style="background: #555;">DATA</span>
+                        {% endif %}
+                        <button onclick="undoTrade('{{ trade.trade_id }}')" class="undo-btn">Undo</button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="action-footer" style="display: flex; flex-direction: column; gap: 10px;">
+            <button onclick="downloadCVC()" class="btn-primary" style="background: var(--accent-purple);">Download CVC Data (Current Session)</button>
+            <button onclick="startNewSession()" class="btn-new-session">Start New Session (Archive Data)</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
