@@ -70,19 +70,6 @@ document.getElementById('get-signal-btn').addEventListener('click', async () => 
             predDisplay.innerText = 'WAIT';
             predDisplay.style.color = '#FFC107';
             document.getElementById('source-text').innerText = 'Data Collection Phase';
-        } else if (data.status === 'paused') {
-            predDisplay.innerText = 'WAIT';
-            predDisplay.style.color = '#FFC107';
-            document.getElementById('source-text').innerText = 'System Paused';
-            
-            if (data.risk_alert) {
-                const alertMsg = document.getElementById('cid-alert-msg');
-                alertMsg.innerText = data.risk_alert;
-                cidAlertBox.style.display = 'block';
-            }
-            
-            alert('SYSTEM PAUSED: Consecutive losses detected. Please enter 2 manual results to resume.');
-            document.querySelectorAll('.btn-result').forEach(b => b.disabled = false);
         } else {
             alert('Error: ' + data.message);
         }
@@ -252,9 +239,5 @@ window.onload = () => {
         document.querySelectorAll('.btn-result').forEach(b => b.disabled = false);
     }
     
-    // Check if system is paused from UI elements if needed
-    const sourceText = document.getElementById('source-text').innerText;
-    if (sourceText === 'System Paused') {
-        document.querySelectorAll('.btn-result').forEach(b => b.disabled = false);
-    }
+    // System Pause check removed
 };

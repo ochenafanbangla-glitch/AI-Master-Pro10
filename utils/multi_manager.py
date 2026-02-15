@@ -37,9 +37,7 @@ class MultiManagerSystem:
         wins = sum(1 for pred, actual, _ in results if pred == actual)
         win_rate = (wins / len(results)) * 100 if results else 0.0
         
-        if streak >= self.loss_threshold:
-            return "PAUSED", streak, win_rate
-        elif streak >= 1:
+        if streak >= 1:
             return "CAUTION", streak, win_rate
         return "STABLE", streak, win_rate
 
@@ -50,13 +48,7 @@ class MultiManagerSystem:
         """
         status, streak, win_rate = self.analyze_performance()
         
-        if status == "PAUSED":
-            prediction_data["confidence"] = 0.0
-            prediction_data["prediction"] = "WAIT"
-            prediction_data["risk_alert"] = f"SYSTEM PAUSED: {streak} consecutive losses. Market mismatch detected."
-            prediction_data["status"] = "paused"
-        
-        elif status == "CAUTION":
+        if status == "CAUTION":
             prediction_data["confidence"] = max(50.0, prediction_data["confidence"] - 10.0)
             prediction_data["risk_alert"] = "Caution: Recent loss detected. Monitoring market flow."
             
@@ -185,8 +177,8 @@ class MultiManagerSystem:
         """
         # Step 1: Risk Manager (Handles Pause/Loss Tracking)
         signal = self.risk_manager(raw_signal)
-        if signal.get("status") == "paused":
-            return signal
+        # if signal.get("status") == "paused":
+        #     return signal
             
         # Step 2: CID Scanner (Adaptive Trend & Win Zone)
         signal = self.cid_scanner_manager(signal)

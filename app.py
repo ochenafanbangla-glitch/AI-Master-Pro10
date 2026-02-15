@@ -124,14 +124,7 @@ def get_signal():
         raw_signal = model_a.predict()
         processed_signal = manager_system.process_signal(raw_signal)
         
-        if processed_signal.get("status") == "paused":
-            return jsonify({
-                "status": "paused",
-                "prediction": "WAIT",
-                "confidence": 0.0,
-                "source": "System Paused",
-                "risk_alert": processed_signal.get("risk_alert", "")
-            })
+        # PAUSED logic removed as per user request
 
         trade_id = str(uuid.uuid4())[:8]
         
