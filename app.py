@@ -231,20 +231,19 @@ def submit_result():
             # Always trigger AI learning after a trade is added
             m_a, _ = get_systems()
             if IS_VERCEL:
-                # On Vercel, background threads might be killed immediately. 
-                # We do it synchronously or skip for performance if needed.
-                m_a.train_from_db()
+                # Optimization for Vercel: Only train if it's a loss or every 5th trade to reduce delay
+                total_trades = get_total_trades_count()
+                is_loss = last_signal and last_signal["prediction"] != actual_result
+                if is_loss or total_trades % 5 == 0:
+                    m_a.train_from_db()
             else:
                 threading.Thread(target=m_a.train_from_db).start()
             
             if last_signal:
                 is_correct = (last_signal["prediction"] == actual_result)
-                if not is_correct:
-                    # If prediction was wrong, trigger an additional training for faster adaptation
-                    if IS_VERCEL:
-                        m_a.train_from_db()
-                    else:
-                        threading.Thread(target=m_a.train_from_db).start()
+                # Additional training for losses handled above for Vercel
+                if not is_correct and not IS_VERCEL:
+                    threading.Thread(target=m_a.train_from_db).start()
                 session.pop("last_signal", None)
                 msg = "Correct Prediction! AI refined." if is_correct else "AI corrected its mistake."
             else:
