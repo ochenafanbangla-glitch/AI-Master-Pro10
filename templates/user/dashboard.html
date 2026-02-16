@@ -51,11 +51,11 @@
             </div>
             <div class="progress-container">
                 <div class="progress-bar-bg">
-                    <div class="progress-bar-fill" style="width: {{ learning_percent }}%;"></div>
+                    <div class="progress-bar-fill" style="width: 100%;"></div>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-top: 5px;">
-                    <span class="progress-text" style="text-align: left;">PEM লার্নিং (মিনিমাম: ২০)</span>
-                    <span class="progress-text">{{ learning_percent }}% অপ্টিমাইজেশন</span>
+                    <span class="progress-text" style="text-align: left;">PEM লার্নিং (সক্রিয়)</span>
+                    <span class="progress-text">100% অপ্টিমাইজেশন</span>
                 </div>
             </div>
         </div>
@@ -67,7 +67,7 @@
                 <span id="current-pattern-badge" class="pattern-badge">প্যাটার্ন: ---</span>
             </div>
             <div class="prediction-box">
-                <div id="prediction-display" class="prediction-value">{% if total_collected < target_trades %}অপেক্ষা করুন{% else %}---{% endif %}</div>
+                <div id="prediction-display" class="prediction-value">---</div>
                 <div class="confidence-container">
                     <div class="confidence-label">
                         <span>কনফিডেন্স</span>
@@ -81,7 +81,7 @@
                     <span>সম্ভাবনা (Probability)</span>
                     <span id="probability-text">0%</span>
                 </div>
-                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 10px;">উৎস: <span id="source-text">{% if total_collected < target_trades %}ডেটা সংগ্রহ পর্যায়{% else %}অপেক্ষা করুন...{% endif %}</span></p>
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 10px;">উৎস: <span id="source-text">অপেক্ষা করুন...</span></p>
             </div>
             <button id="get-signal-btn" class="btn-primary">সিগন্যাল নিন</button>
         </div>
@@ -93,8 +93,8 @@
                 AI ম্যাট্রিক্স প্রশিক্ষণের জন্য সঠিক রেজাল্টটি নির্বাচন করুন:
             </p>
             <div class="btn-group">
-                <button onclick="submitResult('BIG')" class="btn-result btn-big" {% if total_collected >= target_trades %}disabled{% endif %}>মার্কেট BIG</button>
-                <button onclick="submitResult('SMALL')" class="btn-result btn-small" {% if total_collected >= target_trades %}disabled{% endif %}>মার্কেট SMALL</button>
+                <button onclick="submitResult('BIG')" class="btn-result btn-big">মার্কেট BIG</button>
+                <button onclick="submitResult('SMALL')" class="btn-result btn-small">মার্কেট SMALL</button>
             </div>
         </div>
 

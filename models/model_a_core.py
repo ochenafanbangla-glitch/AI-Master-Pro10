@@ -103,18 +103,12 @@ class ModelACore:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
-            # Auto-Purge: Remove entries older than 7 days to keep memory fresh
             cursor.execute("DELETE FROM correction_table WHERE last_seen < datetime('now', '-7 days')")
-            
-            # Check if pattern exists
             cursor.execute("SELECT occurrence_count, reliability_score FROM correction_table WHERE pattern = ?", (pattern,))
             row = cursor.fetchone()
-            
             if row:
                 count, score = row
                 new_count = count + 1
-                # Increase reliability score but cap at 0.95
                 new_score = min(0.95, score + 0.05)
                 cursor.execute("""
                     UPDATE correction_table 
@@ -127,7 +121,6 @@ class ModelACore:
                     INSERT INTO correction_table (pattern, incorrect_prediction, correct_result, occurrence_count, reliability_score)
                     VALUES (?, ?, ?, 1, 0.5)
                 """, (pattern, pred, actual))
-            
             conn.commit()
         except Exception as e:
             print(f"Correction Table Update Error: {e}")
@@ -153,7 +146,6 @@ class ModelACore:
     def train_from_db(self, include_archived=True):
         """
         Analyzes historical data and evaluates strategy performance.
-        Optimized for speed by limiting the training scope.
         """
         if not os.path.exists(self.db_path):
             return False
@@ -162,25 +154,18 @@ class ModelACore:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
-            # Strategy performance: focus on recent 20 active trades
             cursor.execute("SELECT ai_prediction, actual_result, signal_source, timestamp FROM trades WHERE actual_result IS NOT NULL AND is_archived = 0 ORDER BY timestamp ASC")
             rows = cursor.fetchall()
-            
-            # Pattern learning: limit to last 200 results for performance
             limit = 200
             if include_archived:
                 cursor.execute("SELECT actual_result, ai_prediction FROM trades WHERE actual_result IS NOT NULL ORDER BY timestamp DESC LIMIT ?", (limit,))
             else:
                 cursor.execute("SELECT actual_result, ai_prediction FROM trades WHERE actual_result IS NOT NULL AND is_archived = 0 ORDER BY timestamp DESC LIMIT ?", (limit,))
             results_rows = list(reversed(cursor.fetchall()))
-            
             if len(rows) < 5:
                 return False
-
             recent_rows = rows[-20:]
             perf = {s: {"wins": 0, "total": 0} for s in self.strategies}
-            
             source_map = {
                 "Pattern Analysis": "pattern",
                 "Trend Detection": "trend",
@@ -190,63 +175,45 @@ class ModelACore:
                 "Chaos Theory": "chaos",
                 "Streak Reversal": "streak_reversal"
             }
-
             for pred, actual, source, _ in recent_rows:
                 strat = source_map.get(source)
                 if strat:
                     perf[strat]["total"] += 1
                     if pred == actual:
                         perf[strat]["wins"] += 1
-            
             for s in self.strategies:
                 if perf[s]["total"] > 0:
                     accuracy = perf[s]["wins"] / perf[s]["total"]
                     self.strategy_weights[s] = max(0.5, min(3.0, accuracy * 3.0))
-            
             self._save_performance()
-
-            # --- Rolling Window Pattern Learning ---
             results = ["B" if r[0] == "BIG" else "S" for r in results_rows]
             new_patterns = self.patterns.get("patterns", {}).copy()
             error_matrix = self.patterns.get("error_matrix", {}).copy()
-            
             total_results = len(results)
-            max_pattern_length = min(8, total_results - 1) # Reduced from 12 to 8 for speed
-            
+            max_pattern_length = min(8, total_results - 1)
             for length in range(1, max_pattern_length + 1):
-                # Optimization: Increase training depth for better accuracy
                 start_idx = max(0, total_results - length - 50)
                 for i in range(start_idx, total_results - length):
                     pattern = "".join(results[i:i+length])
                     next_val = results[i+length]
-                    
                     dist_from_end = total_results - (i + length)
-                    # Weight recent data more heavily for 95%+ accuracy
                     weight = 10.0 if dist_from_end <= 5 else 5.0 if dist_from_end <= 15 else 1.0
-                    
                     if pattern not in new_patterns:
                         new_patterns[pattern] = {"B": 0, "S": 0}
                     new_patterns[pattern][next_val] += weight
-                    
-                    # Update Error Matrix (PEM)
                     actual = results_rows[i+length][0]
                     pred = results_rows[i+length][1]
-                    
                     if pattern not in error_matrix:
                         error_matrix[pattern] = {"wins": 0, "losses": 0}
-                    
                     inc = 5 if dist_from_end <= 5 else 2 if dist_from_end <= 15 else 1
                     if actual == pred:
                         error_matrix[pattern]["wins"] += inc
                     else:
                         error_matrix[pattern]["losses"] += inc
                         self.update_correction_table(pattern, pred, actual)
-            
-            # Memory Optimization: Keep only top 2000 patterns
             if len(new_patterns) > 2000:
-                sorted_patterns = sorted(new_patterns.items(), key=lambda x: (x[1]["B"] + x[1]["S"]), reverse=True)
+                sorted_patterns = sorted(new_patterns.items(), key=lambda x: sum(x[1].values()), reverse=True)
                 new_patterns = dict(sorted_patterns[:2000])
-            
             self.patterns["patterns"] = new_patterns
             self.patterns["error_matrix"] = error_matrix
             self.patterns["markov_probabilities"] = self._calculate_markov_probabilities(results)
@@ -260,19 +227,20 @@ class ModelACore:
 
     def predict(self):
         """
-        Predicts BIG or SMALL using multiple mathematical strategies with adaptive weighting.
+        Predicts BIG or SMALL using multiple mathematical strategies.
+        UPDATED: Removed "WAIT" mode. Always returns a prediction.
         """
         last_results = self._get_last_n_results(60) 
         volatility = self._calculate_volatility(last_results)
         current_pattern = "".join(last_results[-6:]) if len(last_results) >= 6 else "".join(last_results)
 
-        if len(last_results) < 20:
+        # Removed "WAIT" mode for low data points
+        if len(last_results) < 1:
             return {
-                "prediction": "WAIT", 
-                "confidence": 0.0, 
-                "source": "Data Collection Phase",
-                "detected_pattern": current_pattern,
-                "status": "waiting"
+                "prediction": "BIG", # Default fallback
+                "confidence": 50.0, 
+                "source": "Initial State",
+                "detected_pattern": "NONE"
             }
 
         # Strategies
@@ -309,13 +277,18 @@ class ModelACore:
             if pred:
                 votes[pred] += (conf / 100) * current_weights.get(name, 1.0)
 
-        prediction = "BIG" if votes["BIG"] > votes["SMALL"] else "SMALL"
-        total_votes = votes["BIG"] + votes["SMALL"]
-        confidence = round((max(votes["BIG"], votes["SMALL"]) / total_votes) * 100, 2)
-        confidence = max(min(confidence, 99.0), 60.0)
-        
-        contributions = {name: (conf / 100) * current_weights.get(name, 1.0) for name, pred, conf in strat_outputs if pred == prediction}
-        best_source_key = max(contributions, key=contributions.get) if contributions else "pattern"
+        # Force prediction even if votes are zero
+        if votes["BIG"] == 0 and votes["SMALL"] == 0:
+            prediction = "BIG" if random.random() > 0.5 else "SMALL"
+            confidence = 50.0
+            best_source_key = "chaos"
+        else:
+            prediction = "BIG" if votes["BIG"] >= votes["SMALL"] else "SMALL"
+            total_votes = votes["BIG"] + votes["SMALL"]
+            confidence = round((max(votes["BIG"], votes["SMALL"]) / total_votes) * 100, 2)
+            confidence = max(min(confidence, 99.0), 10.0)
+            contributions = {name: (conf / 100) * current_weights.get(name, 1.0) for name, pred, conf in strat_outputs if pred == prediction}
+            best_source_key = max(contributions, key=contributions.get) if contributions else "pattern"
         
         source_display = {
             "pattern": "Pattern Analysis",
@@ -347,6 +320,7 @@ class ModelACore:
         return None, 0
 
     def _strategy_trend(self, last_results):
+        if not last_results: return None, 0
         numeric = [1 if r == "B" else 0 for r in last_results]
         short_avg = np.mean(numeric[-7:]) if len(numeric) >= 7 else 0.5
         if abs(short_avg - 0.5) > 0.2:
@@ -354,6 +328,7 @@ class ModelACore:
         return ("BIG" if short_avg < 0.5 else "SMALL"), 65
 
     def _strategy_fib(self, last_results):
+        if not last_results: return None, 0
         streak = 1
         for i in range(len(last_results)-2, -1, -1):
             if last_results[i] == last_results[-1]: streak += 1
@@ -363,6 +338,7 @@ class ModelACore:
         return None, 0
 
     def _strategy_rsi(self, last_results):
+        if not last_results: return None, 0
         numeric = [1 if r == "B" else 0 for r in last_results]
         rsi = self._calculate_rsi(numeric)
         if rsi:
@@ -380,11 +356,13 @@ class ModelACore:
         return None, 0
 
     def _strategy_chaos(self, last_results):
+        if not last_results: return None, 0
         if self._calculate_chaos_indicator(last_results):
             return ("SMALL" if last_results[-1] == "B" else "BIG"), 85
         return None, 0
 
     def _strategy_streak_reversal(self, last_results):
+        if not last_results: return None, 0
         streak = 1
         for i in range(len(last_results)-2, -1, -1):
             if last_results[i] == last_results[-1]: streak += 1

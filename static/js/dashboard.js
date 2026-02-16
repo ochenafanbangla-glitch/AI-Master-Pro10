@@ -17,7 +17,13 @@ document.getElementById('get-signal-btn').addEventListener('click', async () => 
 
         if (data.status === 'success') {
             predDisplay.innerText = data.prediction === 'BIG' ? 'BIG' : 'SMALL';
-            predDisplay.style.color = data.prediction === 'BIG' ? '#00C853' : '#FF3D00';
+            
+            // Color Coding Logic (Silent Safety)
+            if (data.warning_color === 'Orange') {
+                predDisplay.style.color = '#FFA500'; // Orange for high risk
+            } else {
+                predDisplay.style.color = data.prediction === 'BIG' ? '#00C853' : '#FF3D00'; // Green/Red for low risk
+            }
 
             const confBar = document.getElementById('confidence-bar');
             const confText = document.getElementById('confidence-text');
@@ -51,8 +57,6 @@ document.getElementById('get-signal-btn').addEventListener('click', async () => 
 
             // Update Manager Status
             const riskStatus = document.getElementById('risk-status');
-            const recoveryStatus = document.getElementById('recovery-status');
-            
             if (data.risk_alert || data.dragon_alert) {
                 riskStatus.innerText = 'হস্তক্ষেপ';
                 riskStatus.style.color = data.dragon_alert ? 'var(--accent-purple)' : '#FF3D00';
@@ -73,11 +77,6 @@ document.getElementById('get-signal-btn').addEventListener('click', async () => 
             
             // Enable result buttons
             document.querySelectorAll('.btn-result').forEach(b => b.disabled = false);
-        } else if (data.status === 'waiting') {
-            alert("ডেটা সংগ্রহ করা হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।");
-            predDisplay.innerText = 'অপেক্ষা করুন';
-            predDisplay.style.color = '#FFC107';
-            document.getElementById('source-text').innerText = 'ডেটা সংগ্রহ পর্যায়';
         } else {
             alert('ত্রুটি: ' + data.message);
         }
@@ -95,7 +94,6 @@ async function submitResult(actualResult) {
     const predDisplay = document.getElementById('prediction-display');
     const userChoice = predDisplay.innerText;
     
-    // Disable buttons to prevent double submission
     const buttons = document.querySelectorAll('.btn-result');
     buttons.forEach(b => b.disabled = true);
     
@@ -111,7 +109,6 @@ async function submitResult(actualResult) {
         });
         const data = await response.json();
         if (data.status === 'success') {
-            // Instead of location.reload(), we update the UI components
             updateDashboardUI();
         } else {
             alert(data.message);
@@ -129,15 +126,11 @@ async function updateDashboardUI() {
         const data = await response.json();
         
         if (data.status === 'success') {
-            // Update Accuracy
             document.getElementById('live-accuracy').innerText = data.accuracy + '%';
-            
-            // Update Learning Progress
             document.querySelector('.learning-stats').innerText = data.total_collected + ' প্যাটার্ন ট্র্যাক করা হয়েছে';
             document.querySelector('.progress-bar-fill').style.width = data.learning_percent + '%';
             document.querySelectorAll('.progress-text')[1].innerText = data.learning_percent + '% অপ্টিমাইজেশন';
             
-            // Update History List
             const historyList = document.getElementById('history-list');
             if (data.trades.length === 0) {
                 historyList.innerHTML = '<p style="text-align: center; color: var(--text-secondary); font-size: 0.9rem; padding: 20px;">এখনো কোনো ট্রেড নেই। শুরু করতে সিগন্যাল নিন!</p>';
@@ -167,25 +160,15 @@ async function updateDashboardUI() {
                 historyList.innerHTML = html;
             }
             
-            // Reset Prediction Display
             const predDisplay = document.getElementById('prediction-display');
-            if (data.total_collected < data.target_trades) {
-                predDisplay.innerText = 'অপেক্ষা করুন';
-                predDisplay.style.color = '#FFC107';
-                document.getElementById('source-text').innerText = 'ডেটা সংগ্রহ পর্যায়';
-                document.querySelectorAll('.btn-result').forEach(b => b.disabled = false);
-            } else {
-                predDisplay.innerText = '---';
-                predDisplay.style.color = '';
-                document.getElementById('source-text').innerText = 'অপেক্ষা করুন...';
-                document.querySelectorAll('.btn-result').forEach(b => b.disabled = true);
-            }
+            predDisplay.innerText = '---';
+            predDisplay.style.color = '';
+            document.getElementById('source-text').innerText = 'অপেক্ষা করুন...';
+            document.querySelectorAll('.btn-result').forEach(b => b.disabled = true);
             
-            // Reset alerts
             document.getElementById('cid-alert-box').style.display = 'none';
             document.getElementById('dragon-alert-box').style.display = 'none';
             document.getElementById('current-pattern-badge').innerText = 'প্যাটার্ন: ---';
-            
         }
     } catch (error) {
         console.error('Error updating UI:', error);
@@ -194,7 +177,6 @@ async function updateDashboardUI() {
 
 async function undoTrade(tradeId) {
     if (!confirm('এই এন্ট্রিটি মুছে ফেলতে এবং AI মেমরি সংশোধন করতে চান?')) return;
-
     try {
         const response = await fetch('/api/undo-trade', {
             method: 'POST',
@@ -223,7 +205,6 @@ async function downloadCVC() {
 
 async function startNewSession() {
     if (!confirm('নতুন সেশন শুরু করতে চান? এটি বর্তমান ডেটা আর্কাইভ করবে এবং উন্নত মার্কেট অ্যাডাপ্টেশনের জন্য AI শর্ট-টার্ম মেমরি (PEM) রিসেট করবে।')) return;
-
     try {
         const response = await fetch('/api/new-session', {
             method: 'POST'
@@ -241,13 +222,6 @@ async function startNewSession() {
     }
 }
 
-// Enable result buttons if we are in data collection phase (initial state)
 window.onload = () => {
-    const totalCollectedText = document.querySelector('.learning-stats').innerText;
-    const count = parseInt(totalCollectedText);
-    if (count < 20) {
-        document.querySelectorAll('.btn-result').forEach(b => b.disabled = false);
-    }
-    
-    // System Pause check removed
+    document.querySelectorAll('.btn-result').forEach(b => b.disabled = false);
 };
