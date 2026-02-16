@@ -3,59 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI MASTER PRO</title>
+    <title>AI MASTER PRO (V.10)</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
     <div class="dashboard-container">
         <header>
             <h1 class="app-title">AI MASTER PRO</h1>
-            <span class="version-badge">ULTRA PRO LEGEND v6.2 (Deep Scan)</span>
+            <span class="version-badge">V.10 PRO MODE (সেন্সর আপগ্রেড)</span>
         </header>
 
         <!-- Trust & Performance Section -->
         <div class="glass-card trust-card">
             <div class="trust-header">
-                <span class="section-title">System Reliability</span>
-                <span class="accuracy-badge">Live Accuracy: <span id="live-accuracy">{{ accuracy }}%</span></span>
+                <span class="section-title">সিস্টেম নির্ভরযোগ্যতা</span>
+                <span class="accuracy-badge">লাইভ একুরেসি: <span id="live-accuracy">{{ accuracy }}%</span></span>
             </div>
             <div class="manager-status-grid">
                 <div class="manager-status-item">
-                    <span class="manager-name">CID Scanner</span>
-                    <span id="cid-status" class="status-indicator status-active">Online</span>
+                    <span class="manager-name">CID সেন্সর</span>
+                    <span id="cid-status" class="status-indicator status-active">অনলাইন</span>
                 </div>
                 <div class="manager-status-item">
-                    <span class="manager-name">Risk Manager</span>
-                    <span id="risk-status" class="status-indicator status-active">Active</span>
+                    <span class="manager-name">রিস্ক ম্যানেজার</span>
+                    <span id="risk-status" class="status-indicator status-active">সক্রিয়</span>
                 </div>
                 <div class="manager-status-item">
-                    <span class="manager-name">Recovery Manager</span>
-                    <span id="recovery-status" class="status-indicator status-idle">Idle</span>
+                    <span class="manager-name">প্রোবাবিলিটি সেন্সর</span>
+                    <span id="probability-status" class="status-indicator status-active">সক্রিয়</span>
                 </div>
             </div>
             <div id="cid-alert-box" class="cid-alert-box" style="display: none;">
-                <div class="cid-alert-header">⚠️ CID SCANNER INTERVENTION</div>
-                <div id="cid-alert-msg" class="cid-alert-body">Blacklisted Pattern Detected! Reversing prediction.</div>
+                <div class="cid-alert-header">⚠️ CID সেন্সর হস্তক্ষেপ</div>
+                <div id="cid-alert-msg" class="cid-alert-body">সতর্কতা: ভুল প্যাটার্ন শনাক্ত হয়েছে! সিগন্যাল পরিবর্তন করা হচ্ছে।</div>
             </div>
             <div id="dragon-alert-box" class="dragon-alert-box" style="display: none;">
-                <div class="dragon-alert-header">🐉 DRAGON BREAKOUT ALERT</div>
-                <div id="dragon-alert-msg" class="dragon-alert-body">Dragon Pattern Detected! Monitoring for breakout.</div>
+                <div class="dragon-alert-header">🐉 ড্রাগন ব্রেকআউট অ্যালার্ট</div>
+                <div id="dragon-alert-msg" class="dragon-alert-body">ড্রাগন প্যাটার্ন শনাক্ত হয়েছে! ব্রেকআউট পর্যবেক্ষণ করা হচ্ছে।</div>
             </div>
         </div>
 
         <!-- AI Learning Progress Section -->
         <div class="glass-card learning-card">
             <div class="learning-header">
-                <span class="section-title">AI Pattern Matrix</span>
-                <span class="learning-stats">{{ total_collected }} Patterns Tracked</span>
+                <span class="section-title">AI প্যাটার্ন ম্যাট্রিক্স</span>
+                <span class="learning-stats">{{ total_collected }} প্যাটার্ন ট্র্যাক করা হয়েছে</span>
             </div>
             <div class="progress-container">
                 <div class="progress-bar-bg">
                     <div class="progress-bar-fill" style="width: {{ learning_percent }}%;"></div>
                 </div>
                 <div style="display: flex; justify-content: space-between; margin-top: 5px;">
-                    <span class="progress-text" style="text-align: left;">PEM Learning (Min: 20)</span>
-                    <span class="progress-text">{{ learning_percent }}% Optimization</span>
+                    <span class="progress-text" style="text-align: left;">PEM লার্নিং (মিনিমাম: ২০)</span>
+                    <span class="progress-text">{{ learning_percent }}% অপ্টিমাইজেশন</span>
                 </div>
             </div>
         </div>
@@ -63,64 +63,68 @@
         <!-- Signal Section -->
         <div class="glass-card">
             <div style="display: flex; justify-content: space-between;">
-                <span class="section-title">Market Analysis</span>
-                <span id="current-pattern-badge" class="pattern-badge">Pattern: ---</span>
+                <span class="section-title">মার্কেট বিশ্লেষণ</span>
+                <span id="current-pattern-badge" class="pattern-badge">প্যাটার্ন: ---</span>
             </div>
             <div class="prediction-box">
-                <div id="prediction-display" class="prediction-value">{% if total_collected < target_trades %}WAIT{% else %}---{% endif %}</div>
+                <div id="prediction-display" class="prediction-value">{% if total_collected < target_trades %}অপেক্ষা করুন{% else %}---{% endif %}</div>
                 <div class="confidence-container">
                     <div class="confidence-label">
-                        <span>Confidence</span>
+                        <span>কনফিডেন্স</span>
                         <span id="confidence-text">0%</span>
                     </div>
                     <div class="confidence-bar-bg">
                         <div id="confidence-bar" class="confidence-bar-fill"></div>
                     </div>
                 </div>
-                <p style="font-size: 0.8rem; color: var(--text-secondary);">Source: <span id="source-text">{% if total_collected < target_trades %}Data Collection Phase{% else %}Waiting...{% endif %}</span></p>
+                <div class="confidence-label" style="margin-top: 10px;">
+                    <span>সম্ভাবনা (Probability)</span>
+                    <span id="probability-text">0%</span>
+                </div>
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 10px;">উৎস: <span id="source-text">{% if total_collected < target_trades %}ডেটা সংগ্রহ পর্যায়{% else %}অপেক্ষা করুন...{% endif %}</span></p>
             </div>
-            <button id="get-signal-btn" class="btn-primary">GET SIGNAL</button>
+            <button id="get-signal-btn" class="btn-primary">সিগন্যাল নিন</button>
         </div>
 
         <!-- Result Input Section -->
         <div class="glass-card">
-            <span class="section-title">Confirm Market Result</span>
+            <span class="section-title">মার্কেট রেজাল্ট নিশ্চিত করুন</span>
             <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 15px;">
-                Select the actual result to train the CID Matrix:
+                AI ম্যাট্রিক্স প্রশিক্ষণের জন্য সঠিক রেজাল্টটি নির্বাচন করুন:
             </p>
             <div class="btn-group">
-                <button onclick="submitResult('BIG')" class="btn-result btn-big" {% if total_collected >= target_trades %}disabled{% endif %}>MARKET BIG</button>
-                <button onclick="submitResult('SMALL')" class="btn-result btn-small" {% if total_collected >= target_trades %}disabled{% endif %}>MARKET SMALL</button>
+                <button onclick="submitResult('BIG')" class="btn-result btn-big" {% if total_collected >= target_trades %}disabled{% endif %}>মার্কেট BIG</button>
+                <button onclick="submitResult('SMALL')" class="btn-result btn-small" {% if total_collected >= target_trades %}disabled{% endif %}>মার্কেট SMALL</button>
             </div>
         </div>
 
         <!-- History Section -->
         <div class="glass-card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                <span class="section-title" style="margin-bottom: 0;">Trade History</span>
-                <span style="font-size: 0.7rem; color: var(--text-secondary);">Recent 10</span>
+                <span class="section-title" style="margin-bottom: 0;">ট্রেড হিস্ট্রি</span>
+                <span style="font-size: 0.7rem; color: var(--text-secondary);">সাম্প্রতিক ১০টি</span>
             </div>
             
             <div id="history-list" class="history-list">
                 {% if not trades %}
-                <p style="text-align: center; color: var(--text-secondary); font-size: 0.9rem; padding: 20px;">No trades yet. Get a signal to start!</p>
+                <p style="text-align: center; color: var(--text-secondary); font-size: 0.9rem; padding: 20px;">এখনো কোনো ট্রেড নেই। শুরু করতে সিগন্যাল নিন!</p>
                 {% endif %}
                 
                 {% for trade in trades %}
                 <div class="history-item">
                     <div class="item-info">
-                        <span class="item-main">{{ trade.ai_prediction }} → {{ trade.actual_result or '???' }}</span>
-                        <span class="item-sub">{{ trade.timestamp.split(' ')[1] if ' ' in trade.timestamp else trade.timestamp }} | Conf: {{ trade.ai_confidence }}%</span>
+                        <span class="item-main">{{ 'BIG' if trade.ai_prediction == 'BIG' else 'SMALL' if trade.ai_prediction == 'SMALL' else trade.ai_prediction }} → {{ 'BIG' if trade.actual_result == 'BIG' else 'SMALL' if trade.actual_result == 'SMALL' else '???' }}</span>
+                        <span class="item-sub">{{ trade.timestamp.split(' ')[1] if ' ' in trade.timestamp else trade.timestamp }} | কনফিডেন্স: {{ trade.ai_confidence }}%</span>
                     </div>
                     <div style="display: flex; align-items: center;">
                         {% if trade.ai_prediction != 'INITIAL' %}
                         <span class="item-status {{ 'status-win' if trade.actual_result == trade.ai_prediction else 'status-loss' }}">
-                            {{ 'WIN' if trade.actual_result == trade.ai_prediction else 'LOSS' }}
+                            {{ 'জয়' if trade.actual_result == trade.ai_prediction else 'হার' }}
                         </span>
                         {% else %}
-                        <span class="item-status" style="background: #555;">DATA</span>
+                        <span class="item-status" style="background: #555;">ডেটা</span>
                         {% endif %}
-                        <button onclick="undoTrade('{{ trade.trade_id }}')" class="undo-btn">Undo</button>
+                        <button onclick="undoTrade('{{ trade.trade_id }}')" class="undo-btn">মুছুন</button>
                     </div>
                 </div>
                 {% endfor %}
@@ -128,8 +132,8 @@
         </div>
 
         <div class="action-footer" style="display: flex; flex-direction: column; gap: 10px;">
-            <button onclick="downloadCVC()" class="btn-primary" style="background: var(--accent-purple);">Download CVC Data (Current Session)</button>
-            <button onclick="startNewSession()" class="btn-new-session">Start New Session (Archive Data)</button>
+            <button onclick="downloadCVC()" class="btn-primary" style="background: var(--accent-purple);">CVC ডেটা ডাউনলোড করুন (বর্তমান সেশন)</button>
+            <button onclick="startNewSession()" class="btn-new-session">নতুন সেশন শুরু করুন (আর্কাইভ ডেটা)</button>
         </div>
     </div>
 

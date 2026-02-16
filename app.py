@@ -165,6 +165,7 @@ def get_signal():
             "risk_alert": processed_signal.get("risk_alert", ""),
             "dragon_alert": processed_signal.get("dragon_alert", ""),
             "memory_alert": processed_signal.get("memory_alert", ""),
+            "probability": processed_signal.get("probability", 0),
             "correction_status": processed_signal.get("correction_status", "NONE"),
             "detected_pattern": processed_signal.get("detected_pattern", "")
         })

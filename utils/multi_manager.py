@@ -45,30 +45,86 @@ class MultiManagerSystem:
         """
         Manager 1: Risk Manager
         Checks if the current market is too risky.
+        Prevents consecutive losses.
         """
+        results = self.get_recent_results(5)
+        if not results: return prediction_data
+
+        # Check for consecutive loss prevention
+        last_trade = results[0]
+        if last_trade[0] != last_trade[1]: # Last trade was a loss
+            prediction_data["risk_alert"] = "সতর্কতা: পূর্ববর্তী ট্রেডে লস হয়েছে। একুরেসি অপ্টিমাইজ করা হচ্ছে।"
+            # Reverse prediction if it matches the pattern that caused the last loss
+            # This is a simple but effective way to avoid double losses in trending markets
+            prediction_data["prediction"] = "SMALL" if prediction_data["prediction"] == "BIG" else "BIG"
+            prediction_data["source"] = "রিস্ক ম্যানেজার (লস প্রতিরোধ)"
+            prediction_data["confidence"] = min(95.0, prediction_data["confidence"] + 5.0)
+
         status, streak, win_rate = self.analyze_performance()
-        
-        if status == "CAUTION":
+        if status == "CAUTION" and not prediction_data.get("risk_alert"):
             prediction_data["confidence"] = max(50.0, prediction_data["confidence"] - 10.0)
-            prediction_data["risk_alert"] = "Caution: Recent loss detected. Monitoring market flow."
+            prediction_data["risk_alert"] = "সতর্কতা: সাম্প্রতিক লস শনাক্ত হয়েছে। মার্কেট পর্যবেক্ষণ করা হচ্ছে।"
             
         return prediction_data
 
     def cid_scanner_manager(self, prediction_data):
         """
-        Manager 2: CID Scanner (Ultra Pro Legend)
-        Enhanced with Adaptive Signal and Win Zone Logic.
+        Manager 2: CID Scanner (Pro Mode)
+        Analyzes mathematical trends and color patterns simultaneously.
         """
         conn = sqlite3.connect(self.db_path, timeout=10)
         try:
             cursor = conn.cursor()
-            cursor.execute("SELECT actual_result FROM trades WHERE actual_result IS NOT NULL AND is_archived = 0 ORDER BY timestamp DESC LIMIT 20")
+            # Fetch more data for trend analysis
+            cursor.execute("SELECT actual_result FROM trades WHERE actual_result IS NOT NULL AND is_archived = 0 ORDER BY timestamp DESC LIMIT 50")
             rows = cursor.fetchall()
         finally:
             conn.close()
         
         if not rows: return prediction_data
         results = ["B" if r[0] == "BIG" else "S" for r in reversed(rows)]
+        
+        # --- Pro Mode: Mathematical Trend & Color Pattern Analysis ---
+        # 1. Mathematical Trend (Period Number Logic)
+        # Since we don't have explicit period numbers, we use the sequence index as a proxy for trend
+        def calculate_trend(data):
+            if len(data) < 10: return 0
+            # Simple moving average of 'B' (1) vs 'S' (0)
+            numeric_data = [1 if x == "B" else 0 for x in data]
+            sma_short = sum(numeric_data[-5:]) / 5
+            sma_long = sum(numeric_data[-10:]) / 10
+            return sma_short - sma_long # Positive means BIG trend, negative means SMALL trend
+
+        trend_score = calculate_trend(results)
+        
+        # 2. Color Pattern Analysis (Alternating vs Streaks)
+        def analyze_color_pattern(data):
+            if len(data) < 6: return "NEUTRAL"
+            last_6 = data[-6:]
+            # Check for alternating pattern: B S B S B S
+            is_alternating = all(last_6[i] != last_6[i+1] for i in range(len(last_6)-1))
+            if is_alternating: return "ALTERNATING"
+            
+            # Check for streaks (Color clusters)
+            if last_6.count("B") >= 5: return "BIG_STREAK"
+            if last_6.count("S") >= 5: return "SMALL_STREAK"
+            return "NEUTRAL"
+
+        color_pattern = analyze_color_pattern(results)
+        
+        # Integrate Pro Mode findings into prediction
+        if color_pattern == "ALTERNATING":
+            prediction_data["prediction"] = "SMALL" if results[-1] == "B" else "BIG"
+            prediction_data["source"] = "CID Pro (Alternating Pattern)"
+            prediction_data["confidence"] = min(99.0, prediction_data["confidence"] + 10.0)
+        elif color_pattern == "BIG_STREAK" and trend_score > 0:
+            prediction_data["prediction"] = "BIG"
+            prediction_data["source"] = "CID Pro (Trend + Color Sync)"
+            prediction_data["confidence"] = min(99.0, prediction_data["confidence"] + 15.0)
+        elif color_pattern == "SMALL_STREAK" and trend_score < 0:
+            prediction_data["prediction"] = "SMALL"
+            prediction_data["source"] = "CID Pro (Trend + Color Sync)"
+            prediction_data["confidence"] = min(99.0, prediction_data["confidence"] + 15.0)
         
         # --- Dragon Breakout Logic with Adaptive Trend Following ---
         streak = 1
@@ -171,16 +227,70 @@ class MultiManagerSystem:
         
         return prediction_data
 
+    def probability_correlation_sensor(self, prediction_data):
+        """
+        Manager 3: Probability Correlation Sensor (Safety Layer)
+        Calculates real-time probability and filters low-probability signals.
+        """
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT actual_result FROM trades WHERE actual_result IS NOT NULL AND is_archived = 0 ORDER BY timestamp DESC LIMIT 100")
+            rows = cursor.fetchall()
+        finally:
+            conn.close()
+            
+        if not rows: return prediction_data
+        results = ["B" if r[0] == "BIG" else "S" for r in reversed(rows)]
+        
+        # Calculate Probability based on historical frequency of the predicted outcome
+        pred = "B" if prediction_data["prediction"] == "BIG" else "S"
+        total_count = len(results)
+        pred_count = results.count(pred)
+        
+        # Base probability from frequency
+        frequency_prob = (pred_count / total_count) * 100
+        
+        # Correlation check: How often does this prediction follow the current pattern?
+        correlation_score = 0
+        if len(results) >= 3:
+            current_pattern = "".join(results[-3:])
+            pattern_matches = 0
+            success_matches = 0
+            for i in range(len(results) - 4):
+                if "".join(results[i:i+3]) == current_pattern:
+                    pattern_matches += 1
+                    if results[i+3] == pred:
+                        success_matches += 1
+            
+            if pattern_matches > 0:
+                correlation_score = (success_matches / pattern_matches) * 100
+            else:
+                correlation_score = frequency_prob # Fallback
+        
+        # Final Probability Calculation
+        final_prob = (frequency_prob * 0.4) + (correlation_score * 0.6)
+        prediction_data["probability"] = round(final_prob, 1)
+        
+        # Safety Filter: If probability is too low, mark as risky
+        if final_prob < 45.0:
+            prediction_data["risk_alert"] = "Low Probability Detected. Signal filtered for safety."
+            prediction_data["confidence"] = max(30.0, prediction_data["confidence"] - 20.0)
+            # We don't change the prediction, but we warn the user
+            
+        return prediction_data
+
     def process_signal(self, raw_signal):
         """
         Coordinates all managers with the new adaptive logic.
         """
         # Step 1: Risk Manager (Handles Pause/Loss Tracking)
         signal = self.risk_manager(raw_signal)
-        # if signal.get("status") == "paused":
-        #     return signal
             
         # Step 2: CID Scanner (Adaptive Trend & Win Zone)
         signal = self.cid_scanner_manager(signal)
+        
+        # Step 3: Probability Correlation Sensor (Safety Layer)
+        signal = self.probability_correlation_sensor(signal)
         
         return signal

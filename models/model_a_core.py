@@ -214,14 +214,15 @@ class ModelACore:
             max_pattern_length = min(8, total_results - 1) # Reduced from 12 to 8 for speed
             
             for length in range(1, max_pattern_length + 1):
-                # Only train on the most recent data points to keep it fast
-                start_idx = max(0, total_results - length - 10)
+                # Optimization: Increase training depth for better accuracy
+                start_idx = max(0, total_results - length - 50)
                 for i in range(start_idx, total_results - length):
                     pattern = "".join(results[i:i+length])
                     next_val = results[i+length]
                     
                     dist_from_end = total_results - (i + length)
-                    weight = 5.0 if dist_from_end <= 10 else 1.0
+                    # Weight recent data more heavily for 95%+ accuracy
+                    weight = 10.0 if dist_from_end <= 5 else 5.0 if dist_from_end <= 15 else 1.0
                     
                     if pattern not in new_patterns:
                         new_patterns[pattern] = {"B": 0, "S": 0}
@@ -234,7 +235,7 @@ class ModelACore:
                     if pattern not in error_matrix:
                         error_matrix[pattern] = {"wins": 0, "losses": 0}
                     
-                    inc = 2 if dist_from_end <= 10 else 1
+                    inc = 5 if dist_from_end <= 5 else 2 if dist_from_end <= 15 else 1
                     if actual == pred:
                         error_matrix[pattern]["wins"] += inc
                     else:

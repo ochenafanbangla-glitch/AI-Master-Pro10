@@ -6,7 +6,7 @@ document.getElementById('get-signal-btn').addEventListener('click', async () => 
     const patternBadge = document.getElementById('current-pattern-badge');
     
     btn.disabled = true;
-    btn.innerText = 'ANALYZING...';
+    btn.innerText = 'বিশ্লেষণ করা হচ্ছে...';
     predDisplay.classList.add('analyzing');
     cidAlertBox.style.display = 'none';
     dragonAlertBox.style.display = 'none';
@@ -16,19 +16,23 @@ document.getElementById('get-signal-btn').addEventListener('click', async () => 
         const data = await response.json();
 
         if (data.status === 'success') {
-            predDisplay.innerText = data.prediction;
+            predDisplay.innerText = data.prediction === 'BIG' ? 'BIG' : 'SMALL';
             predDisplay.style.color = data.prediction === 'BIG' ? '#00C853' : '#FF3D00';
 
             const confBar = document.getElementById('confidence-bar');
             const confText = document.getElementById('confidence-text');
             confBar.style.width = data.confidence + '%';
             confText.innerText = data.confidence + '%';
+            
+            // Update Probability
+            const probText = document.getElementById('probability-text');
+            if (probText) probText.innerText = data.probability + '%';
 
             document.getElementById('source-text').innerText = data.source;
             
             // Update Pattern Badge
             if (data.detected_pattern) {
-                patternBadge.innerText = 'Pattern: ' + data.detected_pattern;
+                patternBadge.innerText = 'প্যাটার্ন: ' + data.detected_pattern;
             }
 
             // Update CID Scanner Alert
@@ -50,35 +54,39 @@ document.getElementById('get-signal-btn').addEventListener('click', async () => 
             const recoveryStatus = document.getElementById('recovery-status');
             
             if (data.risk_alert || data.dragon_alert) {
-                riskStatus.innerText = 'INTERVENING';
+                riskStatus.innerText = 'হস্তক্ষেপ';
                 riskStatus.style.color = data.dragon_alert ? 'var(--accent-purple)' : '#FF3D00';
-                recoveryStatus.innerText = 'ACTIVE';
-                recoveryStatus.classList.remove('status-idle');
-                recoveryStatus.classList.add('status-active');
+                const probStatus = document.getElementById('probability-status');
+                if (probStatus) {
+                    probStatus.innerText = 'সতর্ক';
+                    probStatus.style.color = '#FF3D00';
+                }
             } else {
-                riskStatus.innerText = 'Active';
+                riskStatus.innerText = 'সক্রিয়';
                 riskStatus.style.color = '';
-                recoveryStatus.innerText = 'Idle';
-                recoveryStatus.classList.remove('status-active');
-                recoveryStatus.classList.add('status-idle');
+                const probStatus = document.getElementById('probability-status');
+                if (probStatus) {
+                    probStatus.innerText = 'সক্রিয়';
+                    probStatus.style.color = '';
+                }
             }
             
             // Enable result buttons
             document.querySelectorAll('.btn-result').forEach(b => b.disabled = false);
         } else if (data.status === 'waiting') {
-            alert(data.message);
-            predDisplay.innerText = 'WAIT';
+            alert("ডেটা সংগ্রহ করা হচ্ছে... অনুগ্রহ করে অপেক্ষা করুন।");
+            predDisplay.innerText = 'অপেক্ষা করুন';
             predDisplay.style.color = '#FFC107';
-            document.getElementById('source-text').innerText = 'Data Collection Phase';
+            document.getElementById('source-text').innerText = 'ডেটা সংগ্রহ পর্যায়';
         } else {
-            alert('Error: ' + data.message);
+            alert('ত্রুটি: ' + data.message);
         }
     } catch (error) {
         console.error('Error:', error);
-        alert('Connection error. Try again.');
+        alert('সংযোগ বিচ্ছিন্ন হয়েছে। আবার চেষ্টা করুন।');
     } finally {
         btn.disabled = false;
-        btn.innerText = 'GET SIGNAL';
+        btn.innerText = 'সিগন্যাল নিন';
         predDisplay.classList.remove('analyzing');
     }
 });
@@ -125,32 +133,34 @@ async function updateDashboardUI() {
             document.getElementById('live-accuracy').innerText = data.accuracy + '%';
             
             // Update Learning Progress
-            document.querySelector('.learning-stats').innerText = data.total_collected + ' Patterns Tracked';
+            document.querySelector('.learning-stats').innerText = data.total_collected + ' প্যাটার্ন ট্র্যাক করা হয়েছে';
             document.querySelector('.progress-bar-fill').style.width = data.learning_percent + '%';
-            document.querySelectorAll('.progress-text')[1].innerText = data.learning_percent + '% Optimization';
+            document.querySelectorAll('.progress-text')[1].innerText = data.learning_percent + '% অপ্টিমাইজেশন';
             
             // Update History List
             const historyList = document.getElementById('history-list');
             if (data.trades.length === 0) {
-                historyList.innerHTML = '<p style="text-align: center; color: var(--text-secondary); font-size: 0.9rem; padding: 20px;">No trades yet. Get a signal to start!</p>';
+                historyList.innerHTML = '<p style="text-align: center; color: var(--text-secondary); font-size: 0.9rem; padding: 20px;">এখনো কোনো ট্রেড নেই। শুরু করতে সিগন্যাল নিন!</p>';
             } else {
                 let html = '';
                 data.trades.forEach(trade => {
                     const time = trade.timestamp.includes(' ') ? trade.timestamp.split(' ')[1] : trade.timestamp;
                     const statusClass = trade.actual_result === trade.ai_prediction ? 'status-win' : 'status-loss';
-                    const statusText = trade.actual_result === trade.ai_prediction ? 'WIN' : 'LOSS';
+                    const statusText = trade.actual_result === trade.ai_prediction ? 'জয়' : 'হার';
+                    const predText = trade.ai_prediction === 'BIG' ? 'BIG' : trade.ai_prediction === 'SMALL' ? 'SMALL' : trade.ai_prediction;
+                    const actualText = trade.actual_result === 'BIG' ? 'BIG' : trade.actual_result === 'SMALL' ? 'SMALL' : '???';
                     
                     html += `
                     <div class="history-item">
                         <div class="item-info">
-                            <span class="item-main">${trade.ai_prediction} → ${trade.actual_result || '???'}</span>
-                            <span class="item-sub">${time} | Conf: ${trade.ai_confidence}%</span>
+                            <span class="item-main">${predText} → ${actualText}</span>
+                            <span class="item-sub">${time} | কনফিডেন্স: ${trade.ai_confidence}%</span>
                         </div>
                         <div style="display: flex; align-items: center;">
                             ${trade.ai_prediction !== 'INITIAL' ? 
                                 `<span class="item-status ${statusClass}">${statusText}</span>` : 
-                                `<span class="item-status" style="background: #555;">DATA</span>`}
-                            <button onclick="undoTrade('${trade.trade_id}')" class="undo-btn">Undo</button>
+                                `<span class="item-status" style="background: #555;">ডেটা</span>`}
+                            <button onclick="undoTrade('${trade.trade_id}')" class="undo-btn">মুছুন</button>
                         </div>
                     </div>`;
                 });
@@ -160,21 +170,21 @@ async function updateDashboardUI() {
             // Reset Prediction Display
             const predDisplay = document.getElementById('prediction-display');
             if (data.total_collected < data.target_trades) {
-                predDisplay.innerText = 'WAIT';
+                predDisplay.innerText = 'অপেক্ষা করুন';
                 predDisplay.style.color = '#FFC107';
-                document.getElementById('source-text').innerText = 'Data Collection Phase';
+                document.getElementById('source-text').innerText = 'ডেটা সংগ্রহ পর্যায়';
                 document.querySelectorAll('.btn-result').forEach(b => b.disabled = false);
             } else {
                 predDisplay.innerText = '---';
                 predDisplay.style.color = '';
-                document.getElementById('source-text').innerText = 'Waiting...';
+                document.getElementById('source-text').innerText = 'অপেক্ষা করুন...';
                 document.querySelectorAll('.btn-result').forEach(b => b.disabled = true);
             }
             
             // Reset alerts
             document.getElementById('cid-alert-box').style.display = 'none';
             document.getElementById('dragon-alert-box').style.display = 'none';
-            document.getElementById('current-pattern-badge').innerText = 'Pattern: ---';
+            document.getElementById('current-pattern-badge').innerText = 'প্যাটার্ন: ---';
             
         }
     } catch (error) {
@@ -183,7 +193,7 @@ async function updateDashboardUI() {
 }
 
 async function undoTrade(tradeId) {
-    if (!confirm('Delete this entry and correct AI memory?')) return;
+    if (!confirm('এই এন্ট্রিটি মুছে ফেলতে এবং AI মেমরি সংশোধন করতে চান?')) return;
 
     try {
         const response = await fetch('/api/undo-trade', {
@@ -212,7 +222,7 @@ async function downloadCVC() {
 }
 
 async function startNewSession() {
-    if (!confirm('Start a New Session? This will archive current data and reset the AI short-term memory (PEM) for better market adaptation.')) return;
+    if (!confirm('নতুন সেশন শুরু করতে চান? এটি বর্তমান ডেটা আর্কাইভ করবে এবং উন্নত মার্কেট অ্যাডাপ্টেশনের জন্য AI শর্ট-টার্ম মেমরি (PEM) রিসেট করবে।')) return;
 
     try {
         const response = await fetch('/api/new-session', {
