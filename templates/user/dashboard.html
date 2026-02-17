@@ -24,7 +24,11 @@
                 <input type="text" maxlength="1" class="game-input" id="game-{{ i }}" placeholder="?" oninput="this.value = this.value.toUpperCase()">
                 {% endfor %}
             </div>
-            <button onclick="savePattern()" class="btn-new-session" style="margin-top: 10px; padding: 8px;">প্যাটার্ন সেভ করুন</button>
+            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                <button onclick="savePattern()" class="btn-new-session" style="padding: 8px; flex: 1;">প্যাটার্ন সেভ করুন</button>
+                <button onclick="document.getElementById('screenshot-input').click()" class="btn-new-session" style="padding: 8px; flex: 1; border-color: var(--accent-purple); color: var(--accent-purple);">📷 স্ক্রিনশট আপলোড</button>
+            </div>
+            <input type="file" id="screenshot-input" style="display: none;" accept="image/*" onchange="uploadScreenshot(this)">
         </div>
 
         <!-- Trust & Performance Section -->

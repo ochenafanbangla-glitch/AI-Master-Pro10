@@ -298,3 +298,49 @@ async function savePattern() {
         alert('প্যাটার্ন সেভ করতে সমস্যা হয়েছে।');
     }
 }
+
+async function uploadScreenshot(input) {
+    if (!input.files || !input.files[0]) return;
+    
+    const file = input.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const originalBtnText = document.querySelector('button[onclick*="screenshot-input"]').innerText;
+    const ocrBtn = document.querySelector('button[onclick*="screenshot-input"]');
+    
+    ocrBtn.disabled = true;
+    ocrBtn.innerText = 'প্রসেসিং...';
+
+    try {
+        const response = await fetch('/api/ocr-screenshot', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            const results = data.results;
+            // Clear all inputs first
+            for (let i = 0; i < 15; i++) {
+                document.getElementById(`game-${i}`).value = '';
+            }
+            // Fill inputs from newest to oldest (as returned by OCR)
+            results.forEach((val, index) => {
+                if (index < 15) {
+                    document.getElementById(`game-${index}`).value = val;
+                }
+            });
+            alert('স্ক্রিনশট থেকে ডেটা নেয়া হয়েছে!');
+        } else {
+            alert('ত্রুটি: ' + data.message);
+        }
+    } catch (error) {
+        console.error('OCR Error:', error);
+        alert('স্ক্রিনশট প্রসেস করতে সমস্যা হয়েছে।');
+    } finally {
+        ocrBtn.disabled = false;
+        ocrBtn.innerText = originalBtnText;
+        input.value = ''; // Reset file input
+    }
+}

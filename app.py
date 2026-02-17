@@ -4,6 +4,7 @@ import uuid
 import csv
 import io
 import logging
+import base64
 from datetime import datetime, timedelta, timezone
 import requests
 
@@ -228,6 +229,82 @@ def download_cvc():
         writer.writerows(trades)
         return send_file(io.BytesIO(output.getvalue().encode('utf-8')), mimetype='text/csv', as_attachment=True, download_name="CVC_Data.csv")
     except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/ocr-screenshot", methods=["POST"])
+def ocr_screenshot():
+    try:
+        if 'file' not in request.files:
+            return jsonify({"status": "error", "message": "No file uploaded"}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"status": "error", "message": "No file selected"}), 400
+
+        # Convert image to base64 for GPT-4o-mini
+        image_content = file.read()
+        base64_image = base64.b64encode(image_content).decode('utf-8')
+
+        # Call OpenAI API for OCR
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return jsonify({"status": "error", "message": "OCR API key not configured"}), 500
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+
+        payload = {
+            "model": "gpt-4.1-mini",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Analyze this game history screenshot. Extract the last 15 results (Big or Small). Return ONLY a JSON array of strings, e.g., [\"BIG\", \"SMALL\", \"BIG\", ...]. If you can't find 15, return as many as you see in order from newest to oldest."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            "max_tokens": 300
+        }
+
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+        response_data = response.json()
+
+        if response.status_code != 200:
+            logger.error(f"OpenAI API Error: {response_data}")
+            return jsonify({"status": "error", "message": "OCR service error"}), 500
+
+        content = response_data['choices'][0]['message']['content'].strip()
+        # Clean up the response if it's wrapped in markdown code blocks
+        if content.startswith("```json"):
+            content = content[7:-3].strip()
+        elif content.startswith("```"):
+            content = content[3:-3].strip()
+
+        import json
+        results = json.loads(content)
+        
+        # Normalize results to B/S for the frontend inputs
+        normalized = []
+        for r in results:
+            r_upper = r.upper()
+            if "BIG" in r_upper: normalized.append("B")
+            elif "SMALL" in r_upper: normalized.append("S")
+        
+        return jsonify({"status": "success", "results": normalized})
+
+    except Exception as e:
+        logger.error(f"OCR Error: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
