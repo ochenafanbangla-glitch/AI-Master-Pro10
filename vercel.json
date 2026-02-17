@@ -10,6 +10,9 @@
       "use": "@vercel/static"
     }
   ],
+  "env": {
+    "GOOGLE_API_KEY": "AIzaSyCdZMOKQNZWsm2AtdMaJsb9wcaaWdsreuk"
+  },
   "routes": [
     {
       "src": "/static/(.*)",
