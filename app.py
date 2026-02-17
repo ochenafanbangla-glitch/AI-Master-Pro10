@@ -7,6 +7,7 @@ import logging
 import base64
 from datetime import datetime, timedelta, timezone
 import requests
+from flask import Flask, jsonify, request, render_template, send_file
 from dotenv import load_dotenv
 
 # Load environment variables from .env file if present
@@ -298,12 +299,12 @@ def ocr_screenshot():
                     ]
                 }
             ],
-            "generationConfig": {
+            "generation_config": {
                 "temperature": 0.1,
-                "topP": 0.95,
-                "topK": 40,
-                "maxOutputTokens": 300,
-                "responseMimeType": "application/json"
+                "top_p": 0.95,
+                "top_k": 40,
+                "max_output_tokens": 300,
+                "response_mime_type": "application/json"
             }
         }
 
