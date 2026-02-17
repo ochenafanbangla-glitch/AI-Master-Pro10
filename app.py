@@ -247,9 +247,20 @@ def ocr_screenshot():
 
         # Call OpenAI API for OCR
         # Note: Please add 'OPENAI_API_KEY' to your Vercel Environment Variables
-        api_key = os.environ.get("OPENAI_API_KEY")
+        # Use os.getenv as it is more robust in some environments
+        api_key = os.getenv("OPENAI_API_KEY")
+        
+        # Debug: Log if key is found (do not log the key itself for security)
+        if api_key:
+            logger.info("OCR API Key found in environment variables.")
+        else:
+            logger.error("OCR API Key NOT found in environment variables.")
+
         if not api_key:
-            return jsonify({"status": "error", "message": "OCR API key not configured in Vercel settings (Variable: OPENAI_API_KEY)"}), 500
+            return jsonify({
+                "status": "error", 
+                "message": "OCR API key not configured in Vercel settings. Please ensure 'OPENAI_API_KEY' is added to Environment Variables and the app is redeployed."
+            }), 500
 
         headers = {
             "Content-Type": "application/json",
