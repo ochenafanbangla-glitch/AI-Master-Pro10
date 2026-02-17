@@ -246,9 +246,10 @@ def ocr_screenshot():
         base64_image = base64.b64encode(image_content).decode('utf-8')
 
         # Call OpenAI API for OCR
+        # Note: Please add 'OPENAI_API_KEY' to your Vercel Environment Variables
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            return jsonify({"status": "error", "message": "OCR API key not configured"}), 500
+            return jsonify({"status": "error", "message": "OCR API key not configured in Vercel settings (Variable: OPENAI_API_KEY)"}), 500
 
         headers = {
             "Content-Type": "application/json",
