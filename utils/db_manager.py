@@ -4,7 +4,6 @@ import shutil
 from datetime import datetime, timedelta, timezone
 
 # Database path configuration
-# On Vercel, the root directory is read-only. We must use /tmp for SQLite writes.
 IS_VERCEL = "VERCEL" in os.environ
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 ORIGINAL_DB_PATH = os.path.join(BASE_DIR, 'database.db')
@@ -13,37 +12,24 @@ if IS_VERCEL:
     DB_PATH = '/tmp/database.db'
     # Copy the original database to /tmp if it doesn't exist there yet
     if not os.path.exists(DB_PATH) and os.path.exists(ORIGINAL_DB_PATH):
-        shutil.copy2(ORIGINAL_DB_PATH, DB_PATH)
+        try:
+            shutil.copy2(ORIGINAL_DB_PATH, DB_PATH)
+        except Exception as e:
+            print(f"DB Copy Error: {e}")
 else:
     DB_PATH = ORIGINAL_DB_PATH
 
 def get_db_connection():
-    """Creates and returns a sqlite3 connection with Row factory and timeout for concurrency."""
-    # Ensure the directory exists (mostly for local development)
-    db_dir = os.path.dirname(DB_PATH)
-    if db_dir and not os.path.exists(db_dir):
-        os.makedirs(db_dir, exist_ok=True)
-        
-    conn = sqlite3.connect(DB_PATH, timeout=20) # Increased timeout for serverless
+    """Creates and returns a sqlite3 connection. Simplified for Vercel."""
+    conn = sqlite3.connect(DB_PATH, timeout=30) 
     conn.row_factory = sqlite3.Row
-    
-    # Enable WAL mode and other optimizations for better concurrency and speed
-    # Note: WAL mode might have issues on some network filesystems, but /tmp is usually fine.
-    try:
-        conn.execute('PRAGMA journal_mode=WAL')
-        conn.execute('PRAGMA synchronous=NORMAL')
-    except sqlite3.Error:
-        pass # Fallback if WAL is not supported
-        
-    conn.execute('PRAGMA cache_size=-2000') # 2MB cache
     return conn
 
 def init_db():
-    """Initializes the database schema and creates necessary indexes for performance."""
+    """Initializes the database schema."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Trades table: Stores all trading activity
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS trades (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,7 +47,6 @@ def init_db():
     )
     ''')
     
-    # Users table: For authentication
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,7 +57,6 @@ def init_db():
     )
     ''')
     
-    # Correction Table: Stores persistent error patterns for smart memory
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS correction_table (
         pattern TEXT PRIMARY KEY,
@@ -84,29 +68,21 @@ def init_db():
     )
     ''')
     
-    # Performance Optimization: Add indexes for faster lookups and archiving
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_trades_is_archived ON trades(is_archived)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_trades_trade_id ON trades(trade_id)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_trades_actual_result ON trades(actual_result)')
-
     conn.commit()
     conn.close()
 
 def add_trade(trade_data):
-    """Adds a new trade entry with duplicate prevention logic."""
+    """Adds a new trade entry."""
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Set IST timestamp if not provided
         timestamp = trade_data.get('timestamp')
         if not timestamp:
             ist_offset = timezone(timedelta(hours=5, minutes=30))
             timestamp = datetime.now(tz=ist_offset).strftime('%Y-%m-%d %H:%M:%S')
 
-        # Duplicate Prevention: Check if trade_id already exists
         cursor.execute('SELECT 1 FROM trades WHERE trade_id = ?', (trade_data['trade_id'],))
         if cursor.fetchone(): return False
 
@@ -120,15 +96,13 @@ def add_trade(trade_data):
         ))
         conn.commit()
         return True
-    except sqlite3.Error as e:
+    except Exception as e:
         print(f"DB Error: {e}")
-        if conn: conn.rollback()
         return False
     finally:
         if conn: conn.close()
 
 def get_recent_trades(limit=10, include_archived=False):
-    """Retrieves recent trades, optionally including archived ones."""
     conn = get_db_connection()
     try:
         query = 'SELECT * FROM trades ORDER BY timestamp DESC LIMIT ?' if include_archived else \
@@ -139,7 +113,6 @@ def get_recent_trades(limit=10, include_archived=False):
         conn.close()
 
 def archive_all_trades():
-    """Marks all current active trades as archived for New Session logic."""
     conn = get_db_connection()
     try:
         conn.execute('UPDATE trades SET is_archived = 1 WHERE is_archived = 0')
@@ -148,7 +121,6 @@ def archive_all_trades():
         conn.close()
 
 def delete_trade(trade_id):
-    """Deletes a specific trade by ID."""
     conn = get_db_connection()
     try:
         conn.execute('DELETE FROM trades WHERE trade_id = ?', (trade_id,))
@@ -157,7 +129,6 @@ def delete_trade(trade_id):
         conn.close()
 
 def clear_db():
-    """Permanently clears all trade history."""
     conn = get_db_connection()
     try:
         conn.execute('DELETE FROM trades')
@@ -166,7 +137,6 @@ def clear_db():
         conn.close()
 
 def get_total_trades_count(include_archived=False):
-    """Returns the total count of trades."""
     conn = get_db_connection()
     try:
         query = 'SELECT COUNT(*) FROM trades' if include_archived else \
@@ -177,7 +147,6 @@ def get_total_trades_count(include_archived=False):
         conn.close()
 
 def get_session_trades(session_id):
-    """Retrieves all trades for a specific session."""
     conn = get_db_connection()
     try:
         trades = conn.execute('SELECT * FROM trades WHERE session_id = ? ORDER BY timestamp ASC', (session_id,)).fetchall()

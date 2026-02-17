@@ -3,38 +3,37 @@ import numpy as np
 import sqlite3
 import os
 import json
-try:
-    import fcntl
-except ImportError:
-    fcntl = None
 import time
+import shutil
 from utils.db_manager import get_db_connection
 
 class ModelACore:
     """
     Model A (Father): Main live signal provider.
-    Advanced Lite AI: Uses mathematical pattern analysis with adaptive performance weighting.
-    Enhanced with CID Scanner Pattern Error Matrix (PEM) and Rolling Window Learning.
+    Optimized for Vercel: Removed fcntl dependency and simplified file handling.
     """
     def __init__(self):
         self.name = "Model A (Advanced Lite AI)"
-        IS_VERCEL = "VERCEL" in os.environ
+        self.is_vercel = "VERCEL" in os.environ
         BASE_DIR = os.path.dirname(os.path.dirname(__file__))
         
-        if IS_VERCEL:
+        if self.is_vercel:
+            # Use /tmp for all write operations on Vercel
             self.db_path = '/tmp/database.db'
             self.pattern_file = '/tmp/patterns.json'
             self.performance_file = '/tmp/strategy_performance.json'
             
-            # Copy original files to /tmp for write access
+            # Copy original files to /tmp for write access if they don't exist
             orig_pattern = os.path.join(os.path.dirname(__file__), 'patterns.json')
             orig_perf = os.path.join(os.path.dirname(__file__), 'strategy_performance.json')
             
-            import shutil
-            if not os.path.exists(self.pattern_file) and os.path.exists(orig_pattern):
-                shutil.copy2(orig_pattern, self.pattern_file)
-            if not os.path.exists(self.performance_file) and os.path.exists(orig_perf):
-                shutil.copy2(orig_perf, self.performance_file)
+            try:
+                if not os.path.exists(self.pattern_file) and os.path.exists(orig_pattern):
+                    shutil.copy2(orig_pattern, self.pattern_file)
+                if not os.path.exists(self.performance_file) and os.path.exists(orig_perf):
+                    shutil.copy2(orig_perf, self.performance_file)
+            except Exception as e:
+                print(f"Vercel File Copy Error: {e}")
         else:
             self.db_path = os.path.join(BASE_DIR, 'database.db')
             self.pattern_file = os.path.join(os.path.dirname(__file__), 'patterns.json')
@@ -45,15 +44,12 @@ class ModelACore:
         self.strategy_weights = self._load_performance()
 
     def _load_patterns(self):
-        """Loads AI pattern data from JSON file with file locking for safety."""
+        """Loads AI pattern data from JSON file. Removed fcntl for Vercel compatibility."""
         default_data = {"patterns": {}, "markov_probabilities": {}, "error_matrix": {}}
         if os.path.exists(self.pattern_file):
             try:
                 with open(self.pattern_file, 'r') as f:
-                    if fcntl: fcntl.flock(f, fcntl.LOCK_SH)
                     data = json.load(f)
-                    if fcntl: fcntl.flock(f, fcntl.LOCK_UN)
-                    
                     if not isinstance(data, dict): return default_data
                     if "patterns" not in data: data["patterns"] = {}
                     if "markov_probabilities" not in data: data["markov_probabilities"] = {}
@@ -65,12 +61,12 @@ class ModelACore:
         return default_data
 
     def _save_patterns(self):
-        """Saves AI pattern data to JSON file with file locking."""
+        """Saves AI pattern data to JSON file. Uses a temp file for safer writing."""
         try:
-            with open(self.pattern_file, 'w') as f:
-                if fcntl: fcntl.flock(f, fcntl.LOCK_EX)
+            temp_file = self.pattern_file + ".tmp"
+            with open(temp_file, 'w') as f:
                 json.dump(self.patterns, f)
-                if fcntl: fcntl.flock(f, fcntl.LOCK_UN)
+            os.replace(temp_file, self.pattern_file)
         except Exception as e:
             print(f"Error saving patterns: {e}")
 
@@ -91,8 +87,10 @@ class ModelACore:
 
     def _save_performance(self):
         try:
-            with open(self.performance_file, 'w') as f:
+            temp_file = self.performance_file + ".tmp"
+            with open(temp_file, 'w') as f:
                 json.dump(self.strategy_weights, f)
+            os.replace(temp_file, self.performance_file)
         except Exception as e:
             print(f"Error saving performance: {e}")
 
