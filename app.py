@@ -259,68 +259,67 @@ def ocr_screenshot():
         if file.filename == '':
             return jsonify({"status": "error", "message": "No file selected"}), 400
 
-        # Convert image to base64 for GPT-4o-mini
+        # Convert image to base64 for Gemini API
         image_content = file.read()
         base64_image = base64.b64encode(image_content).decode('utf-8')
 
-        # Call OpenAI API for OCR
-        # We check multiple possible environment variable names just in case
-        possible_keys = ["OPENAI_API_KEY", "openai_api_key", "OpenAI_API_Key"]
-        api_key = None
-        
-        for k in possible_keys:
-            val = os.environ.get(k) or os.getenv(k)
-            if val:
-                api_key = val.strip()
-                logger.info(f"OCR API Key detected using key name: {k} (Length: {len(api_key)})")
-                break
+        # Call Google Gemini AI for OCR
+        # We use GOOGLE_API_KEY as the primary environment variable
+        api_key = os.environ.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
         
         if not api_key:
-            logger.error(f"OCR API Key NOT found. Checked: {', '.join(possible_keys)}")
-            # Log all available keys (names only) for debugging in Vercel
-            available_keys = list(os.environ.keys())
-            logger.info(f"Available env vars: {available_keys}")
-            
+            logger.error("GOOGLE_API_KEY NOT found in environment variables.")
             return jsonify({
                 "status": "error", 
-                "message": f"OCR API key not configured. Checked names: {', '.join(possible_keys)}. Please ensure 'OPENAI_API_KEY' is added to Vercel Environment Variables and the app is redeployed."
+                "message": "Google AI API key (GOOGLE_API_KEY) not configured. Please add it to Vercel Environment Variables and redeploy."
             }), 500
 
+        # Gemini 1.5 Flash is highly efficient for OCR tasks
+        model_name = "gemini-1.5-flash"
+        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+
         headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
+            "Content-Type": "application/json"
         }
 
         payload = {
-            "model": "gpt-4o-mini",
-            "messages": [
+            "contents": [
                 {
-                    "role": "user",
-                    "content": [
+                    "parts": [
                         {
-                            "type": "text",
                             "text": "Analyze this game history screenshot. Extract the last 15 results (Big or Small). Return ONLY a JSON array of strings, e.g., [\"BIG\", \"SMALL\", \"BIG\", ...]. If you can't find 15, return as many as you see in order from newest to oldest."
                         },
                         {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}"
+                            "inline_data": {
+                                "mime_type": "image/jpeg",
+                                "data": base64_image
                             }
                         }
                     ]
                 }
             ],
-            "max_tokens": 300
+            "generationConfig": {
+                "temperature": 0.1,
+                "topP": 0.95,
+                "topK": 40,
+                "maxOutputTokens": 300,
+                "responseMimeType": "application/json"
+            }
         }
 
-        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+        response = requests.post(gemini_url, headers=headers, json=payload)
         response_data = response.json()
 
         if response.status_code != 200:
-            logger.error(f"OpenAI API Error: {response_data}")
-            return jsonify({"status": "error", "message": "OCR service error"}), 500
+            logger.error(f"Google Gemini API Error: {response_data}")
+            return jsonify({"status": "error", "message": f"OCR service error: {response_data.get('error', {}).get('message', 'Unknown error')}"}), 500
 
-        content = response_data['choices'][0]['message']['content'].strip()
+        # Extract content from Gemini response
+        try:
+            content = response_data['candidates'][0]['content']['parts'][0]['text'].strip()
+        except (KeyError, IndexError) as e:
+            logger.error(f"Failed to parse Gemini response: {response_data}")
+            return jsonify({"status": "error", "message": "Failed to parse OCR response"}), 500
         # Clean up the response if it's wrapped in markdown code blocks
         if content.startswith("```json"):
             content = content[7:-3].strip()

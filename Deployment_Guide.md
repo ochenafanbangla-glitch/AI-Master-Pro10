@@ -81,6 +81,7 @@ This guide provides step-by-step instructions to deploy the AI MASTER PRO applic
     # Set environment variables (optional, but good practice for SECRET_KEY)
     os.environ["SECRET_KEY"] = "your_strong_secret_key_here"
     os.environ["ADMIN_PASSWORD"] = "your_admin_password_here"
+    os.environ["GOOGLE_API_KEY"] = "your_google_ai_api_key_here"
 
     # Import your Flask app
     from app import app as application  # noqa
