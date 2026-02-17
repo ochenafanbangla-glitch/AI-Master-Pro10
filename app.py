@@ -281,6 +281,9 @@ def download_cvc():
 def admin_panel():
     return render_template("admin/panel.html", trades=get_recent_trades(50))
 
+# For Vercel, we need to export the app object
+app = app
+
 if __name__ == "__main__":
     if not os.path.exists(DB_PATH): init_db()
     app.run(debug=True, port=5000)

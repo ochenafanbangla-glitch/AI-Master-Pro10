@@ -21,9 +21,21 @@ else:
 
 def get_db_connection():
     """Creates and returns a sqlite3 connection. Simplified for Vercel."""
-    conn = sqlite3.connect(DB_PATH, timeout=30) 
-    conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        # Ensure the directory for DB_PATH exists
+        db_dir = os.path.dirname(DB_PATH)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
+            
+        conn = sqlite3.connect(DB_PATH, timeout=30) 
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception as e:
+        print(f"Connection Error: {e}")
+        # Fallback to in-memory if disk is really not writable
+        conn = sqlite3.connect(':memory:', check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        return conn
 
 def init_db():
     """Initializes the database schema."""

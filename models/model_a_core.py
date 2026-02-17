@@ -28,10 +28,20 @@ class ModelACore:
             orig_perf = os.path.join(os.path.dirname(__file__), 'strategy_performance.json')
             
             try:
+                # Ensure /tmp is writable and copy if needed
                 if not os.path.exists(self.pattern_file) and os.path.exists(orig_pattern):
                     shutil.copy2(orig_pattern, self.pattern_file)
+                elif not os.path.exists(self.pattern_file):
+                    # Create empty if original doesn't exist
+                    with open(self.pattern_file, 'w') as f:
+                        json.dump({"patterns": {}, "markov_probabilities": {}, "error_matrix": {}}, f)
+                        
                 if not os.path.exists(self.performance_file) and os.path.exists(orig_perf):
                     shutil.copy2(orig_perf, self.performance_file)
+                elif not os.path.exists(self.performance_file):
+                    # Create default weights if original doesn't exist
+                    with open(self.performance_file, 'w') as f:
+                        json.dump({s: 1.0 for s in self.strategies}, f)
             except Exception as e:
                 print(f"Vercel File Copy Error: {e}")
         else:
