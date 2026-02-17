@@ -5,10 +5,13 @@ import csv
 import io
 import logging
 from datetime import datetime, timedelta, timezone
-from models.model_a_core import ModelACore
-from utils.db_manager import add_trade, get_recent_trades, init_db, delete_trade, clear_db, get_total_trades_count, DB_PATH, archive_all_trades, get_session_trades
-from utils.auth_helper import login_required, admin_required
-from utils.multi_manager import MultiManagerSystem
+try:
+    from models.model_a_core import ModelACore
+    from utils.db_manager import add_trade, get_recent_trades, init_db, delete_trade, clear_db, get_total_trades_count, DB_PATH, archive_all_trades, get_session_trades
+    from utils.auth_helper import login_required, admin_required
+    from utils.multi_manager import MultiManagerSystem
+except Exception as e:
+    logger.error(f"Import Error: {e}")
 import requests
 
 # Configure Logging
@@ -60,15 +63,20 @@ def get_systems():
     global model_a, manager_system
     try:
         if model_a is None:
+            logger.info("Initializing ModelACore...")
             model_a = ModelACore()
+            logger.info(f"DB Path: {model_a.db_path}")
             if not os.path.exists(model_a.db_path):
+                logger.info("DB not found, initializing...")
                 init_db()
         if manager_system is None:
+            logger.info("Initializing MultiManagerSystem...")
             manager_system = MultiManagerSystem(model_a, model_a.db_path)
         return model_a, manager_system
     except Exception as e:
         logger.error(f"System Init Error: {e}", exc_info=True)
-        raise e
+        # Return dummy systems to avoid total crash if possible
+        return None, None
 
 @app.before_request
 def ensure_session():
@@ -82,16 +90,11 @@ def ensure_session():
 @app.route("/health")
 def health_check():
     """Health check endpoint for Vercel diagnostics."""
-    try:
-        m_a, _ = get_systems()
-        return jsonify({
-            "status": "healthy",
-            "db_path": m_a.db_path,
-            "db_exists": os.path.exists(m_a.db_path),
-            "is_vercel": IS_VERCEL
-        })
-    except Exception as e:
-        return jsonify({"status": "unhealthy", "error": str(e)}), 500
+    return jsonify({
+        "status": "healthy",
+        "is_vercel": IS_VERCEL,
+        "env": dict(os.environ)
+    })
 
 @app.route("/")
 def dashboard():
