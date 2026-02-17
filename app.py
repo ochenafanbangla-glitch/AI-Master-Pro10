@@ -274,9 +274,9 @@ def ocr_screenshot():
                 "message": "Google AI API key (GOOGLE_API_KEY) not configured. Please add it to Vercel Environment Variables and redeploy."
             }), 500
 
-        # Gemini 1.5 Flash is highly efficient for OCR tasks
-        model_name = "gemini-1.5-flash"
-        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        # Gemini 2.0 Flash is the latest efficient model for OCR tasks
+        model_name = "gemini-2.0-flash"
+        gemini_url = f"https://generativelanguage.googleapis.com/v1/models/{model_name}:generateContent?key={api_key}"
 
         headers = {
             "Content-Type": "application/json"
