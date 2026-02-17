@@ -1,18 +1,18 @@
 from flask import Flask, jsonify
 import os
 import numpy
-# import pandas
+import pandas
 # import scikit-learn
 
 app = Flask(__name__)
 
 @app.route("/")
 def index():
-    return "AI Master Pro 10 - Testing Imports"
+    return "AI Master Pro 10 - Testing Pandas"
 
 @app.route("/health")
 def health():
-    return jsonify({"status": "ok", "numpy": "imported"})
+    return jsonify({"status": "ok", "pandas": "imported"})
 
 if __name__ == "__main__":
     app.run(port=5000)
