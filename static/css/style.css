@@ -451,3 +451,29 @@ header {
     70% { box-shadow: 0 0 0 10px rgba(157, 80, 187, 0); }
     100% { box-shadow: 0 0 0 0 rgba(157, 80, 187, 0); }
 }
+
+/* Pattern Input Styles */
+.pattern-input-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.game-input {
+    width: 100%;
+    background: #21262D;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px;
+    color: white;
+    text-align: center;
+    font-weight: bold;
+    font-size: 1rem;
+}
+
+.game-input:focus {
+    outline: none;
+    border-color: var(--accent-blue);
+    background: #2d333b;
+}

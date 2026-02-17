@@ -16,7 +16,14 @@ document.getElementById('get-signal-btn').addEventListener('click', async () => 
         const data = await response.json();
 
         if (data.status === 'success') {
-            predDisplay.innerText = data.prediction === 'BIG' ? 'BIG' : 'SMALL';
+            if (data.prediction === 'SKIP/RISKY') {
+                predDisplay.innerText = 'SKIP/RISKY';
+                predDisplay.style.fontSize = '2.5rem';
+                predDisplay.style.color = '#FFA500';
+            } else {
+                predDisplay.innerText = data.prediction === 'BIG' ? 'BIG' : 'SMALL';
+                predDisplay.style.fontSize = '3.5rem';
+            }
             
             // Color Coding Logic (Silent Safety)
             if (data.warning_color === 'Orange') {
@@ -54,6 +61,9 @@ document.getElementById('get-signal-btn').addEventListener('click', async () => 
                 dragonMsg.innerText = data.dragon_alert;
                 dragonAlertBox.style.display = 'block';
             }
+
+            // Update Volatility
+            updateVolatilityUI(data.volatility_score, data.volatility_status);
 
             // Update Manager Status
             const riskStatus = document.getElementById('risk-status');
@@ -169,6 +179,9 @@ async function updateDashboardUI() {
             document.getElementById('cid-alert-box').style.display = 'none';
             document.getElementById('dragon-alert-box').style.display = 'none';
             document.getElementById('current-pattern-badge').innerText = 'প্যাটার্ন: ---';
+
+            // Update Volatility on dashboard refresh
+            updateVolatilityUI(data.volatility_score, data.volatility_status);
         }
     } catch (error) {
         console.error('Error updating UI:', error);
@@ -203,6 +216,23 @@ async function downloadCVC() {
     }
 }
 
+function updateVolatilityUI(score, status) {
+    const volBar = document.getElementById('volatility-bar');
+    const volStatus = document.getElementById('volatility-status');
+    if (volBar && volStatus) {
+        volBar.style.width = score + '%';
+        volStatus.innerText = status;
+        
+        let color = 'var(--success-green)';
+        if (status === 'EXTREME') color = 'var(--error-red)';
+        else if (status === 'VOLATILE') color = '#FFA500';
+        else if (status === 'NORMAL') color = 'var(--accent-blue)';
+        
+        volBar.style.background = color;
+        volStatus.style.color = color;
+    }
+}
+
 async function startNewSession() {
     if (!confirm('নতুন সেশন শুরু করতে চান? এটি বর্তমান ডেটা আর্কাইভ করবে এবং উন্নত মার্কেট অ্যাডাপ্টেশনের জন্য AI শর্ট-টার্ম মেমরি (PEM) রিসেট করবে।')) return;
     try {
@@ -225,3 +255,46 @@ async function startNewSession() {
 window.onload = () => {
     document.querySelectorAll('.btn-result').forEach(b => b.disabled = false);
 };
+
+async function savePattern() {
+    const inputs = document.querySelectorAll('.game-input');
+    const pattern = [];
+    let isValid = true;
+    
+    inputs.forEach(input => {
+        const val = input.value.toUpperCase();
+        if (val === 'B' || val === 'S') {
+            pattern.push(val === 'B' ? 'BIG' : 'SMALL');
+        } else if (val !== '') {
+            isValid = false;
+        }
+    });
+
+    if (!isValid) {
+        alert('অনুগ্রহ করে শুধু B অথবা S ইনপুট দিন।');
+        return;
+    }
+
+    if (pattern.length < 5) {
+        alert('কমপক্ষে ৫টি গেমের রেজাল্ট দিন।');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/save-bulk-pattern', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pattern: pattern })
+        });
+        const data = await response.json();
+        if (data.status === 'success') {
+            alert('প্যাটার্ন সফলভাবে সেভ করা হয়েছে!');
+            updateDashboardUI();
+        } else {
+            alert(data.message);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        alert('প্যাটার্ন সেভ করতে সমস্যা হয়েছে।');
+    }
+}

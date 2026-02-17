@@ -10,6 +10,7 @@ from utils.db_manager import add_trade, get_recent_trades, init_db, delete_trade
 from utils.auth_helper import login_required, admin_required
 from utils.multi_manager import MultiManagerSystem
 import threading
+import requests
 
 # Configure Logging
 IS_VERCEL = "VERCEL" in os.environ
@@ -30,6 +31,34 @@ logger = logging.getLogger(__name__)
 # Initialize Flask App
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ai-master-pro-secure-key-2026")
+
+# Telegram Bot Config
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
+def send_telegram_signal(signal_data):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    
+    msg = f"🚀 *AI MASTER PRO V.10 SIGNAL*\n\n"
+    msg += f"📊 Prediction: *{signal_data['prediction']}*\n"
+    msg += f"🎯 Confidence: {signal_data['confidence']}%\n"
+    msg += f"🔥 Probability: {signal_data.get('probability', 0)}%\n"
+    msg += f"📈 Volatility: {signal_data.get('volatility_status', 'STABLE')}\n"
+    msg += f"🔍 Source: {signal_data['source']}\n"
+    
+    if signal_data.get('risk_alert'):
+        msg += f"\n⚠️ *Risk Alert:* {signal_data['risk_alert']}"
+    
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    try:
+        requests.post(url, json={
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": msg,
+            "parse_mode": "Markdown"
+        }, timeout=5)
+    except Exception as e:
+        logger.error(f"Telegram Error: {e}")
 
 # Initialize AI Models and Multi-Manager System
 model_a = None
@@ -97,13 +126,20 @@ def get_dashboard_data():
             accuracy = 0.0
         target_trades = 0
         learning_percent = 100
+        # Get volatility for dashboard
+        _, m_s = get_systems()
+        results = m_s.get_recent_results(20)
+        vol_score, vol_status = m_s.calculate_volatility(results)
+        
         return jsonify({
             "status": "success",
             "trades": recent_trades,
             "total_collected": total_collected,
             "target_trades": target_trades,
             "learning_percent": learning_percent,
-            "accuracy": accuracy
+            "accuracy": accuracy,
+            "volatility_score": vol_score,
+            "volatility_status": vol_status
         })
     except Exception as e:
         logger.error(f"Dashboard Data Error: {e}", exc_info=True)
@@ -116,6 +152,10 @@ def get_signal():
         m_a, m_s = get_systems()
         raw_signal = m_a.predict()
         processed_signal = m_s.process_signal(raw_signal)
+        
+        # Forward to Telegram
+        threading.Thread(target=send_telegram_signal, args=(processed_signal,)).start()
+        
         trade_id = str(uuid.uuid4())[:8]
         session["last_signal"] = {
             "trade_id": trade_id,
@@ -135,10 +175,56 @@ def get_signal():
             "probability": processed_signal.get("probability", 0),
             "correction_status": processed_signal.get("correction_status", "NONE"),
             "detected_pattern": processed_signal.get("detected_pattern", ""),
-            "warning_color": processed_signal.get("warning_color", "Green")
+            "warning_color": processed_signal.get("warning_color", "Green"),
+            "volatility_score": processed_signal.get("volatility_score", 0),
+            "volatility_status": processed_signal.get("volatility_status", "STABLE")
         })
     except Exception as e:
         logger.error(f"Get Signal Error: {e}", exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/save-bulk-pattern", methods=["POST"])
+def save_bulk_pattern():
+    """Saves multiple game results at once for initial pattern learning."""
+    data = request.json
+    if not data or 'pattern' not in data:
+        return jsonify({"status": "error", "message": "No pattern provided"}), 400
+    
+    pattern = data.get("pattern", [])
+    if not isinstance(pattern, list) or len(pattern) == 0:
+        return jsonify({"status": "error", "message": "Invalid pattern format"}), 400
+
+    try:
+        ist_now = datetime.now(tz=timezone(timedelta(hours=5, minutes=30)))
+        session_id = session.get("session_id")
+        user_id = session.get("user_id", "guest_user")
+        
+        for i, result in enumerate(pattern):
+            # Space out timestamps slightly for correct ordering
+            timestamp = (ist_now + timedelta(seconds=i)).strftime("%Y-%m-%d %H:%M:%S")
+            trade_data = {
+                "user_id": user_id,
+                "session_id": session_id,
+                "trade_id": f"INIT-{str(uuid.uuid4())[:4]}",
+                "timestamp": timestamp,
+                "ai_prediction": "INITIAL",
+                "ai_confidence": 0.0,
+                "signal_source": "Bulk Pattern Input",
+                "user_choice": None,
+                "actual_result": result,
+                "bet_amount": 0
+            }
+            add_trade(trade_data)
+        
+        m_a, _ = get_systems()
+        if IS_VERCEL:
+            m_a.train_from_db()
+        else:
+            threading.Thread(target=m_a.train_from_db).start()
+            
+        return jsonify({"status": "success", "message": f"{len(pattern)} patterns saved and AI updated."}), 200
+    except Exception as e:
+        logger.error(f"Bulk Pattern Error: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route("/api/submit-result", methods=["POST"])
