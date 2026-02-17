@@ -70,6 +70,20 @@ def health_check():
         "is_vercel": IS_VERCEL
     })
 
+@app.route("/debug-env")
+def debug_env():
+    # Only allow checking for existence of keys, never show values
+    keys_to_check = ["OPENAI_API_KEY", "SECRET_KEY", "VERCEL", "VERCEL_ENV"]
+    results = {}
+    for key in keys_to_check:
+        val = os.environ.get(key)
+        results[key] = {
+            "exists": val is not None,
+            "length": len(val) if val else 0,
+            "starts_with_sk": val.startswith("sk-") if val else False
+        }
+    return jsonify(results)
+
 @app.route("/")
 def dashboard():
     try:
@@ -250,27 +264,26 @@ def ocr_screenshot():
         base64_image = base64.b64encode(image_content).decode('utf-8')
 
         # Call OpenAI API for OCR
-        # Note: Please add 'OPENAI_API_KEY' to your Vercel Environment Variables
-        # We strip the key to handle potential copy-paste issues with whitespace/newlines
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if api_key:
-            api_key = api_key.strip()
+        # We check multiple possible environment variable names just in case
+        possible_keys = ["OPENAI_API_KEY", "openai_api_key", "OpenAI_API_Key"]
+        api_key = None
         
-        # Debug: Log status (do not log the key itself for security)
-        if api_key:
-            logger.info(f"OCR API Key detected (Length: {len(api_key)})")
-        else:
-            # Fallback check just in case
-            api_key = os.getenv("OPENAI_API_KEY", "").strip()
-            if api_key:
-                logger.info(f"OCR API Key detected via fallback (Length: {len(api_key)})")
-            else:
-                logger.error("OCR API Key NOT found in environment variables.")
-
+        for k in possible_keys:
+            val = os.environ.get(k) or os.getenv(k)
+            if val:
+                api_key = val.strip()
+                logger.info(f"OCR API Key detected using key name: {k} (Length: {len(api_key)})")
+                break
+        
         if not api_key:
+            logger.error(f"OCR API Key NOT found. Checked: {', '.join(possible_keys)}")
+            # Log all available keys (names only) for debugging in Vercel
+            available_keys = list(os.environ.keys())
+            logger.info(f"Available env vars: {available_keys}")
+            
             return jsonify({
                 "status": "error", 
-                "message": "OCR API key not configured in Vercel settings. Please ensure 'OPENAI_API_KEY' is added to Environment Variables (not as a Secret, but as a plain Environment Variable) and the app is redeployed."
+                "message": f"OCR API key not configured. Checked names: {', '.join(possible_keys)}. Please ensure 'OPENAI_API_KEY' is added to Vercel Environment Variables and the app is redeployed."
             }), 500
 
         headers = {
@@ -279,7 +292,7 @@ def ocr_screenshot():
         }
 
         payload = {
-            "model": "gpt-4.1-mini",
+            "model": "gpt-4o-mini",
             "messages": [
                 {
                     "role": "user",
