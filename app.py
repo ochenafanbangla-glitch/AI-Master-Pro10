@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for, send_file
+from flask import Flask, render_template, jsonify, request, session, send_file
 import os
 import uuid
 import csv
@@ -7,7 +7,6 @@ import logging
 import base64
 from datetime import datetime, timedelta, timezone
 import requests
-from flask import Flask, jsonify, request, render_template, send_file
 from dotenv import load_dotenv
 
 # Load environment variables from .env file if present
@@ -88,7 +87,7 @@ def debug_env():
 @app.route("/")
 def dashboard():
     try:
-        m_a, m_s = get_systems()
+        m_a, _ = get_systems()
         if not m_a: return "System Initialization Failed", 500
         
         recent_trades = get_recent_trades(10)
@@ -250,6 +249,29 @@ def download_cvc():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/cid-stats", methods=["GET"])
+def get_cid_stats():
+    """Get CID Scanner performance statistics"""
+    try:
+        _, m_s = get_systems()
+        if not m_s:
+            return jsonify({"status": "error", "message": "System not initialized"}), 500
+        
+        perf = m_s.track_cid_performance()
+        threshold = m_s.adaptive_threshold()
+        
+        return jsonify({
+            "status": "success",
+            "cid_accuracy": perf["cid_accuracy"],
+            "total_signals": perf["cid_total_signals"],
+            "correct_signals": perf["cid_correct_signals"],
+            "current_threshold": round(threshold * 100, 1),
+            "threshold_status": "আক্রমণাত্মক" if threshold < 0.60 else "মাঝারি" if threshold < 0.65 else "রক্ষণশীল"
+        })
+    except Exception as e:
+        logger.error("CID Stats Error: %s", e, exc_info=True)
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route("/api/ocr-screenshot", methods=["POST"])
 def ocr_screenshot():
     try:
@@ -308,7 +330,7 @@ def ocr_screenshot():
             }
         }
 
-        response = requests.post(gemini_url, headers=headers, json=payload)
+        response = requests.post(gemini_url, headers=headers, json=payload, timeout=30)
         response_data = response.json()
 
         if response.status_code != 200:
@@ -318,7 +340,7 @@ def ocr_screenshot():
         # Extract content from Gemini response
         try:
             content = response_data['candidates'][0]['content']['parts'][0]['text'].strip()
-        except (KeyError, IndexError) as e:
+        except (KeyError, IndexError):
             logger.error(f"Failed to parse Gemini response: {response_data}")
             return jsonify({"status": "error", "message": "Failed to parse OCR response"}), 500
         # Clean up the response if it's wrapped in markdown code blocks
