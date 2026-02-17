@@ -9,7 +9,6 @@ from models.model_a_core import ModelACore
 from utils.db_manager import add_trade, get_recent_trades, init_db, delete_trade, clear_db, get_total_trades_count, DB_PATH, archive_all_trades, get_session_trades
 from utils.auth_helper import login_required, admin_required
 from utils.multi_manager import MultiManagerSystem
-import threading
 import requests
 
 # Configure Logging
@@ -52,11 +51,12 @@ def send_telegram_signal(signal_data):
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
+        # Using a short timeout to avoid blocking the request
         requests.post(url, json={
             "chat_id": TELEGRAM_CHAT_ID,
             "text": msg,
             "parse_mode": "Markdown"
-        }, timeout=5)
+        }, timeout=2)
     except Exception as e:
         logger.error(f"Telegram Error: {e}")
 
@@ -68,10 +68,11 @@ def get_systems():
     global model_a, manager_system
     if model_a is None:
         model_a = ModelACore()
-        if not os.path.exists(DB_PATH):
+        # On Vercel, init_db is handled in model_a_core or by the existence of the DB
+        if not os.path.exists(model_a.db_path):
             init_db()
     if manager_system is None:
-        manager_system = MultiManagerSystem(model_a, DB_PATH)
+        manager_system = MultiManagerSystem(model_a, model_a.db_path)
     return model_a, manager_system
 
 @app.before_request
@@ -102,7 +103,7 @@ def dashboard():
         recent_trades = []
         total_collected = 0
         accuracy = 0.0
-    target_trades = 0 # Removed minimum data requirement
+    target_trades = 0 
     learning_percent = 100
     return render_template("user/dashboard.html", 
                            trades=recent_trades, 
@@ -126,6 +127,7 @@ def get_dashboard_data():
             accuracy = 0.0
         target_trades = 0
         learning_percent = 100
+        
         # Get volatility for dashboard
         _, m_s = get_systems()
         results = m_s.get_recent_results(20)
@@ -153,8 +155,8 @@ def get_signal():
         raw_signal = m_a.predict()
         processed_signal = m_s.process_signal(raw_signal)
         
-        # Forward to Telegram
-        threading.Thread(target=send_telegram_signal, args=(processed_signal,)).start()
+        # Forward to Telegram (Synchronous on Vercel to ensure it completes, but with short timeout)
+        send_telegram_signal(processed_signal)
         
         trade_id = str(uuid.uuid4())[:8]
         session["last_signal"] = {
@@ -200,7 +202,6 @@ def save_bulk_pattern():
         user_id = session.get("user_id", "guest_user")
         
         for i, result in enumerate(pattern):
-            # Space out timestamps slightly for correct ordering
             timestamp = (ist_now + timedelta(seconds=i)).strftime("%Y-%m-%d %H:%M:%S")
             trade_data = {
                 "user_id": user_id,
@@ -217,10 +218,8 @@ def save_bulk_pattern():
             add_trade(trade_data)
         
         m_a, _ = get_systems()
-        if IS_VERCEL:
-            m_a.train_from_db()
-        else:
-            threading.Thread(target=m_a.train_from_db).start()
+        # Train synchronously on Vercel
+        m_a.train_from_db()
             
         return jsonify({"status": "success", "message": f"{len(pattern)} patterns saved and AI updated."}), 200
     except Exception as e:
@@ -238,19 +237,23 @@ def submit_result():
     bet_amount = data.get("bet_amount", 0)
     if not actual_result or actual_result not in ["BIG", "SMALL"]:
         return jsonify({"status": "error", "message": "Invalid result input.", "code": "INVALID_RESULT"}), 400
+    
     last_sub_time = session.get("last_submission_time")
     last_sub_val = session.get("last_submission_val")
     curr_time = datetime.now().timestamp()
     if last_sub_time and (curr_time - last_sub_time < 0.1) and (last_sub_val == actual_result):
         return jsonify({"status": "error", "message": "Duplicate submission detected.", "code": "DUPLICATE_SUBMISSION"}), 400
+    
     session["last_submission_time"] = curr_time
     session["last_submission_val"] = actual_result
     last_signal = session.get("last_signal")
+    
     if not last_signal:
         trade_id = str(uuid.uuid4())[:8]
         prediction, confidence, source = "INITIAL", 0.0, "Initial Data Collection"
     else:
         trade_id, prediction, confidence, source = last_signal["trade_id"], last_signal["prediction"], last_signal["confidence"], last_signal["source"]
+    
     ist_now = datetime.now(tz=timezone(timedelta(hours=5, minutes=30)))
     timestamp_str = ist_now.strftime("%Y-%m-%d %H:%M:%S")
     trade_data = {
@@ -268,17 +271,11 @@ def submit_result():
     try:
         if add_trade(trade_data):
             m_a, _ = get_systems()
-            if IS_VERCEL:
-                total_trades = get_total_trades_count()
-                is_loss = last_signal and last_signal["prediction"] != actual_result
-                if is_loss or total_trades % 5 == 0:
-                    m_a.train_from_db()
-            else:
-                threading.Thread(target=m_a.train_from_db).start()
+            # Always train synchronously on Vercel
+            m_a.train_from_db()
+            
             if last_signal:
                 is_correct = (last_signal["prediction"] == actual_result)
-                if not is_correct and not IS_VERCEL:
-                    threading.Thread(target=m_a.train_from_db).start()
                 session.pop("last_signal", None)
                 msg = "Correct Prediction! AI refined." if is_correct else "AI corrected its mistake."
             else:
@@ -296,7 +293,8 @@ def undo_trade():
     if not trade_id: return jsonify({"status": "error", "message": "Trade ID required", "code": "MISSING_TRADE_ID"}), 400
     try:
         delete_trade(trade_id)
-        threading.Thread(target=model_a.train_from_db).start()
+        m_a, _ = get_systems()
+        m_a.train_from_db()
         return jsonify({"status": "success", "message": "Trade deleted and AI updated"}), 200
     except Exception as e:
         logger.error(f"API Error: {e}", exc_info=True)
@@ -306,9 +304,10 @@ def undo_trade():
 def new_session():
     try:
         archive_all_trades()
-        threading.Thread(target=model_a.train_from_db, kwargs={"include_archived": True}).start()
-        model_a.patterns["error_matrix"] = {} 
-        model_a._save_patterns()
+        m_a, _ = get_systems()
+        m_a.train_from_db(include_archived=True)
+        m_a.patterns["error_matrix"] = {} 
+        m_a._save_patterns()
         session.pop("last_signal", None)
         session["session_id"] = str(uuid.uuid4())
         return jsonify({"status": "success", "message": "New Session Started!"}), 200

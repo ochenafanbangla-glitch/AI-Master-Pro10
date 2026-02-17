@@ -8,6 +8,7 @@ try:
 except ImportError:
     fcntl = None
 import time
+from utils.db_manager import get_db_connection
 
 class ModelACore:
     """
@@ -101,7 +102,7 @@ class ModelACore:
         
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("DELETE FROM correction_table WHERE last_seen < datetime('now', '-7 days')")
             cursor.execute("SELECT occurrence_count, reliability_score FROM correction_table WHERE pattern = ?", (pattern,))
@@ -131,7 +132,7 @@ class ModelACore:
         """Retrieves a correction for a given pattern if it exists and is reliable."""
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path, timeout=10)
+            conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("SELECT correct_result, reliability_score FROM correction_table WHERE pattern = ?", (pattern,))
             row = cursor.fetchone()
@@ -147,12 +148,9 @@ class ModelACore:
         """
         Analyzes historical data and evaluates strategy performance.
         """
-        if not os.path.exists(self.db_path):
-            return False
-
         conn = None
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("SELECT ai_prediction, actual_result, signal_source, timestamp FROM trades WHERE actual_result IS NOT NULL AND is_archived = 0 ORDER BY timestamp ASC")
             rows = cursor.fetchall()
@@ -225,193 +223,116 @@ class ModelACore:
         finally:
             if conn: conn.close()
 
+    def _calculate_markov_probabilities(self, results):
+        if len(results) < 2: return {}
+        transitions = {}
+        for i in range(len(results)-1):
+            curr = results[i]
+            nxt = results[i+1]
+            if curr not in transitions: transitions[curr] = {"B": 0, "S": 0}
+            transitions[curr][nxt] += 1
+        probs = {}
+        for state, counts in transitions.items():
+            total = sum(counts.values())
+            probs[state] = {k: v/total for k, v in counts.items()}
+        return probs
+
+    def _get_last_n_results(self, n=60):
+        conn = None
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT actual_result FROM trades WHERE actual_result IS NOT NULL ORDER BY timestamp DESC LIMIT ?", (n,))
+            rows = cursor.fetchall()
+            return ["B" if r[0] == "BIG" else "S" for r in reversed(rows)]
+        except Exception as e:
+            print(f"Error getting results: {e}")
+            return []
+        finally:
+            if conn: conn.close()
+
+    def _calculate_volatility(self, results):
+        if len(results) < 10: return 0.5
+        changes = sum(1 for i in range(len(results)-1) if results[i] != results[i+1])
+        return changes / (len(results)-1)
+
     def predict(self):
         """
         Predicts BIG or SMALL using multiple mathematical strategies.
-        UPDATED: Removed "WAIT" mode. Always returns a prediction.
         """
         last_results = self._get_last_n_results(60) 
+        if not last_results:
+            return {"prediction": "BIG", "confidence": 50.0, "source": "Fallback", "detected_pattern": "NONE"}
+            
         volatility = self._calculate_volatility(last_results)
         current_pattern = "".join(last_results[-6:]) if len(last_results) >= 6 else "".join(last_results)
-
-        # Removed "WAIT" mode for low data points
-        if len(last_results) < 1:
-            return {
-                "prediction": "BIG", # Default fallback
-                "confidence": 50.0, 
-                "source": "Initial State",
-                "detected_pattern": "NONE"
-            }
-
-        # Strategies
-        pattern_pred, pattern_conf = self._strategy_pattern(last_results)
-        trend_pred, trend_conf = self._strategy_trend(last_results)
-        fib_pred, fib_conf = self._strategy_fib(last_results)
-        rsi_pred, rsi_conf = self._strategy_rsi(last_results)
-        markov_pred, markov_conf = self._strategy_markov(last_results)
-        chaos_pred, chaos_conf = self._strategy_chaos(last_results)
-        streak_pred, streak_conf = self._strategy_streak_reversal(last_results)
-
-        votes = {"BIG": 0, "SMALL": 0}
-        strat_outputs = [
-            ("pattern", pattern_pred, pattern_conf),
-            ("trend", trend_pred, trend_conf),
-            ("fib", fib_pred, fib_conf),
-            ("rsi", rsi_pred, rsi_conf),
-            ("markov", markov_pred, markov_conf),
-            ("chaos", chaos_pred, chaos_conf),
-            ("streak_reversal", streak_pred, streak_conf)
-        ]
-
-        current_weights = self.strategy_weights.copy()
-        if volatility > 0.7:
-            current_weights["chaos"] *= 1.5
-            current_weights["streak_reversal"] *= 1.2
-            current_weights["trend"] *= 0.5
-        elif volatility < 0.3:
-            current_weights["pattern"] *= 1.5
-            current_weights["trend"] *= 1.5
-            current_weights["chaos"] *= 0.5
-
-        for name, pred, conf in strat_outputs:
-            if pred:
-                votes[pred] += (conf / 100) * current_weights.get(name, 1.0)
-
-        # Force prediction even if votes are zero
-        if votes["BIG"] == 0 and votes["SMALL"] == 0:
-            prediction = "BIG" if random.random() > 0.5 else "SMALL"
-            confidence = 50.0
-            best_source_key = "chaos"
-        else:
-            prediction = "BIG" if votes["BIG"] >= votes["SMALL"] else "SMALL"
-            total_votes = votes["BIG"] + votes["SMALL"]
-            confidence = round((max(votes["BIG"], votes["SMALL"]) / total_votes) * 100, 2)
-            confidence = max(min(confidence, 99.0), 10.0)
-            contributions = {name: (conf / 100) * current_weights.get(name, 1.0) for name, pred, conf in strat_outputs if pred == prediction}
-            best_source_key = max(contributions, key=contributions.get) if contributions else "pattern"
         
-        source_display = {
-            "pattern": "Pattern Analysis",
-            "trend": "Trend Detection",
-            "fib": "Fibonacci Sequence",
-            "rsi": "RSI Analysis",
-            "markov": "Markov Chain Analysis",
-            "chaos": "Chaos Theory",
-            "streak_reversal": "Streak Reversal"
-        }
+        votes = {"BIG": 0.0, "SMALL": 0.0}
+        sources = {}
 
-        return {
-            "prediction": prediction,
-            "confidence": confidence,
-            "source": source_display.get(best_source_key, "Mathematical Sequence"),
-            "detected_pattern": current_pattern
-        }
+        # 1. Pattern Matching (PEM Enhanced)
+        for length in range(min(8, len(last_results)), 1, -1):
+            pat = "".join(last_results[-length:])
+            if pat in self.patterns.get("patterns", {}):
+                stats = self.patterns["patterns"][pat]
+                total = sum(stats.values())
+                if total > 0:
+                    w = self.strategy_weights["pattern"] * (length / 4)
+                    votes["BIG"] += (stats["B"] / total) * w
+                    votes["SMALL"] += (stats["S"] / total) * w
+                    sources["Pattern Analysis"] = "BIG" if stats["B"] > stats["S"] else "SMALL"
+                    break
 
-    def _strategy_pattern(self, last_results):
-        for length in range(min(12, len(last_results)), 0, -1):
-            p_check = "".join(last_results[-length:])
-            if p_check in self.patterns.get("patterns", {}):
-                counts = self.patterns["patterns"][p_check]
-                total = counts["B"] + counts["S"]
-                if total > 5:
-                    pred = "BIG" if counts["B"] > counts["S"] else "SMALL"
-                    conf = (max(counts["B"], counts["S"]) / total) * 100
-                    return pred, min(conf + (length * 2), 100)
-        return None, 0
+        # 2. Trend Detection
+        if len(last_results) >= 10:
+            recent = last_results[-5:]
+            older = last_results[-10:-5]
+            recent_b = recent.count("B")
+            older_b = older.count("B")
+            w = self.strategy_weights["trend"]
+            if recent_b > older_b: 
+                votes["BIG"] += 0.6 * w
+                sources["Trend Detection"] = "BIG"
+            elif recent_b < older_b: 
+                votes["SMALL"] += 0.6 * w
+                sources["Trend Detection"] = "SMALL"
 
-    def _strategy_trend(self, last_results):
-        if not last_results: return None, 0
-        numeric = [1 if r == "B" else 0 for r in last_results]
-        short_avg = np.mean(numeric[-7:]) if len(numeric) >= 7 else 0.5
-        if abs(short_avg - 0.5) > 0.2:
-            return ("BIG" if short_avg > 0.5 else "SMALL"), 80
-        return ("BIG" if short_avg < 0.5 else "SMALL"), 65
+        # 3. Markov Chain
+        if last_results[-1] in self.patterns.get("markov_probabilities", {}):
+            p = self.patterns["markov_probabilities"][last_results[-1]]
+            w = self.strategy_weights["markov"]
+            votes["BIG"] += p.get("B", 0.5) * w
+            votes["SMALL"] += p.get("S", 0.5) * w
+            sources["Markov Chain Analysis"] = "BIG" if p.get("B", 0) > p.get("S", 0) else "SMALL"
 
-    def _strategy_fib(self, last_results):
-        if not last_results: return None, 0
-        streak = 1
-        for i in range(len(last_results)-2, -1, -1):
-            if last_results[i] == last_results[-1]: streak += 1
-            else: break
-        if streak in [2, 3, 5, 8, 13]:
-            return ("SMALL" if last_results[-1] == "B" else "BIG"), 75
-        return None, 0
-
-    def _strategy_rsi(self, last_results):
-        if not last_results: return None, 0
-        numeric = [1 if r == "B" else 0 for r in last_results]
-        rsi = self._calculate_rsi(numeric)
-        if rsi:
-            if rsi > 75: return "SMALL", 85
-            if rsi < 25: return "BIG", 85
-        return None, 0
-
-    def _strategy_markov(self, last_results):
-        if len(last_results) >= 2:
-            state = last_results[-1]
-            probs = self.patterns.get("markov_probabilities", {}).get(state)
-            if probs:
-                pred = "BIG" if probs["B"] > probs["S"] else "SMALL"
-                return pred, max(probs["B"], probs["S"]) * 100
-        return None, 0
-
-    def _strategy_chaos(self, last_results):
-        if not last_results: return None, 0
-        if self._calculate_chaos_indicator(last_results):
-            return ("SMALL" if last_results[-1] == "B" else "BIG"), 85
-        return None, 0
-
-    def _strategy_streak_reversal(self, last_results):
-        if not last_results: return None, 0
+        # 4. Streak Reversal (Anti-Dragon)
         streak = 1
         for i in range(len(last_results)-2, -1, -1):
             if last_results[i] == last_results[-1]: streak += 1
             else: break
         if streak >= 4:
-            return ("SMALL" if last_results[-1] == "B" else "BIG"), 70 + (streak * 5)
-        return None, 0
+            w = self.strategy_weights["streak_reversal"] * (streak / 3)
+            rev = "SMALL" if last_results[-1] == "B" else "BIG"
+            votes[rev] += 0.8 * w
+            sources["Streak Reversal"] = rev
 
-    def _get_last_n_results(self, n=None):
-        conn = None
-        try:
-            conn = sqlite3.connect(self.db_path, timeout=10)
-            cursor = conn.cursor()
-            cursor.execute("SELECT actual_result FROM trades WHERE actual_result IS NOT NULL ORDER BY timestamp DESC LIMIT ?", (n or 100,))
-            rows = cursor.fetchall()
-            return ["B" if r[0] == "BIG" else "S" for r in reversed(rows)]
-        except Exception as e:
-            print(f"Error getting last results: {e}")
-            return []
-        finally:
-            if conn: conn.close()
-
-    def _calculate_rsi(self, prices, period=14):
-        if len(prices) < period + 1: return None
-        changes = np.diff(prices)
-        gains = np.where(changes > 0, changes, 0)
-        losses = np.where(changes < 0, -changes, 0)
-        avg_gain = np.mean(gains[:period])
-        avg_loss = np.mean(losses[:period])
-        if avg_loss == 0: return 100
-        rs = avg_gain / avg_loss
-        return 100 - (100 / (1 + rs))
-
-    def _calculate_markov_probabilities(self, results):
-        transitions = {}
-        for i in range(len(results) - 1):
-            curr, nxt = results[i], results[i+1]
-            if curr not in transitions: transitions[curr] = {"B": 0, "S": 0}
-            transitions[curr][nxt] += 1
-        return {s: {"B": v["B"]/(v["B"]+v["S"]), "S": v["S"]/(v["B"]+v["S"])} for s, v in transitions.items() if (v["B"]+v["S"]) > 0}
-
-    def _calculate_chaos_indicator(self, results, window=6):
-        if len(results) < window: return False
-        numeric = [1 if r == "B" else 0 for r in results[-window:]]
-        changes = sum(1 for i in range(window-1) if numeric[i] != numeric[i+1])
-        return changes >= window - 2
-
-    def _calculate_volatility(self, results, window=20):
-        if len(results) < window: return 0.5
-        recent = results[-window:]
-        changes = sum(1 for i in range(len(recent)-1) if recent[i] != recent[i+1])
-        return changes / (window - 1)
+        prediction = "BIG" if votes["BIG"] >= votes["SMALL"] else "SMALL"
+        total_votes = votes["BIG"] + votes["SMALL"]
+        confidence = (votes[prediction] / total_votes * 100) if total_votes > 0 else 50.0
+        
+        # Calibration
+        if volatility > 0.7: confidence -= 10
+        confidence = max(65.0, min(98.5, confidence))
+        
+        source = "Combined Matrix"
+        for s, p in sources.items():
+            if p == prediction:
+                source = s
+                break
+                
+        return {
+            "prediction": prediction,
+            "confidence": round(confidence, 1),
+            "source": source,
+            "detected_pattern": current_pattern if current_pattern else "NONE"
+        }
