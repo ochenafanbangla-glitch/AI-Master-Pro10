@@ -70,24 +70,10 @@ def health_check():
         "is_vercel": IS_VERCEL
     })
 
-@app.route("/debug-env")
-def debug_env():
-    # Only allow checking for existence of keys, never show values
-    keys_to_check = ["OPENAI_API_KEY", "SECRET_KEY", "VERCEL", "VERCEL_ENV"]
-    results = {}
-    for key in keys_to_check:
-        val = os.environ.get(key)
-        results[key] = {
-            "exists": val is not None,
-            "length": len(val) if val else 0,
-            "starts_with_sk": val.startswith("sk-") if val else False
-        }
-    return jsonify(results)
-
 @app.route("/")
 def dashboard():
     try:
-        m_a, _ = get_systems()
+        m_a, m_s = get_systems()
         if not m_a: return "System Initialization Failed", 500
         
         recent_trades = get_recent_trades(10)
@@ -96,12 +82,15 @@ def dashboard():
         completed_trades = [t for t in all_trades if t["actual_result"] is not None]
         accuracy = round((sum(1 for t in completed_trades if t["ai_prediction"] == t["actual_result"]) / len(completed_trades)) * 100, 1) if completed_trades else 0.0
         
+        loss_streak = m_s.analyze_loss_streak()
+        
         return render_template("user/dashboard.html", 
                                trades=recent_trades, 
                                total_collected=total_collected, 
                                target_trades=0,
                                learning_percent=100,
-                               accuracy=accuracy)
+                               accuracy=accuracy,
+                               loss_streak=loss_streak)
     except Exception as e:
         logger.error(f"Dashboard Error: {e}", exc_info=True)
         return f"Internal Server Error: {str(e)}", 500
@@ -118,6 +107,7 @@ def get_dashboard_data():
         _, m_s = get_systems()
         results = m_s.get_recent_results(20)
         vol_score, vol_status = m_s.calculate_volatility(results)
+        loss_streak = m_s.analyze_loss_streak()
         
         return jsonify({
             "status": "success",
@@ -126,6 +116,7 @@ def get_dashboard_data():
             "accuracy": accuracy,
             "volatility_score": vol_score,
             "volatility_status": vol_status,
+            "loss_streak": loss_streak,
             "learning_percent": 100
         })
     except Exception as e:
@@ -156,7 +147,8 @@ def get_signal():
             "probability": processed_signal.get("probability", 0),
             "volatility_score": processed_signal.get("volatility_score", 0),
             "volatility_status": processed_signal.get("volatility_status", "STABLE"),
-            "warning_color": processed_signal.get("warning_color", "Green")
+            "warning_color": processed_signal.get("warning_color", "Green"),
+            "loss_streak": processed_signal.get("loss_streak", 0)
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -247,122 +239,6 @@ def download_cvc():
         writer.writerows(trades)
         return send_file(io.BytesIO(output.getvalue().encode('utf-8')), mimetype='text/csv', as_attachment=True, download_name="CVC_Data.csv")
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route("/api/cid-stats", methods=["GET"])
-def get_cid_stats():
-    """Get CID Scanner performance statistics"""
-    try:
-        _, m_s = get_systems()
-        if not m_s:
-            return jsonify({"status": "error", "message": "System not initialized"}), 500
-        
-        perf = m_s.track_cid_performance()
-        threshold = m_s.adaptive_threshold()
-        
-        return jsonify({
-            "status": "success",
-            "cid_accuracy": perf["cid_accuracy"],
-            "total_signals": perf["cid_total_signals"],
-            "correct_signals": perf["cid_correct_signals"],
-            "current_threshold": round(threshold * 100, 1),
-            "threshold_status": "আক্রমণাত্মক" if threshold < 0.60 else "মাঝারি" if threshold < 0.65 else "রক্ষণশীল"
-        })
-    except Exception as e:
-        logger.error("CID Stats Error: %s", e, exc_info=True)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route("/api/ocr-screenshot", methods=["POST"])
-def ocr_screenshot():
-    try:
-        if 'file' not in request.files:
-            return jsonify({"status": "error", "message": "No file uploaded"}), 400
-        
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({"status": "error", "message": "No file selected"}), 400
-
-        # Convert image to base64 for Gemini API
-        image_content = file.read()
-        base64_image = base64.b64encode(image_content).decode('utf-8')
-
-        # Call Google Gemini AI for OCR
-        # We use GOOGLE_API_KEY as the primary environment variable
-        api_key = os.environ.get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        
-        if not api_key:
-            logger.error("GOOGLE_API_KEY NOT found in environment variables.")
-            return jsonify({
-                "status": "error", 
-                "message": "Google AI API key (GOOGLE_API_KEY) not configured. Please add it to Vercel Environment Variables and redeploy."
-            }), 500
-
-        # Gemini 2.0 Flash is the latest efficient model for OCR tasks
-        model_name = "gemini-2.0-flash"
-        gemini_url = f"https://generativelanguage.googleapis.com/v1/models/{model_name}:generateContent?key={api_key}"
-
-        headers = {
-            "Content-Type": "application/json"
-        }
-
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": "Analyze this game history screenshot. Extract the last 15 results (Big or Small). Return ONLY a JSON array of strings, e.g., [\"BIG\", \"SMALL\", \"BIG\", ...]. If you can't find 15, return as many as you see in order from newest to oldest."
-                        },
-                        {
-                            "inline_data": {
-                                "mime_type": "image/jpeg",
-                                "data": base64_image
-                            }
-                        }
-                    ]
-                }
-            ],
-            "generation_config": {
-                "temperature": 0.1,
-                "top_p": 0.95,
-                "top_k": 40,
-                "max_output_tokens": 300,
-                "response_mime_type": "application/json"
-            }
-        }
-
-        response = requests.post(gemini_url, headers=headers, json=payload, timeout=30)
-        response_data = response.json()
-
-        if response.status_code != 200:
-            logger.error(f"Google Gemini API Error: {response_data}")
-            return jsonify({"status": "error", "message": f"OCR service error: {response_data.get('error', {}).get('message', 'Unknown error')}"}), 500
-
-        # Extract content from Gemini response
-        try:
-            content = response_data['candidates'][0]['content']['parts'][0]['text'].strip()
-        except (KeyError, IndexError):
-            logger.error(f"Failed to parse Gemini response: {response_data}")
-            return jsonify({"status": "error", "message": "Failed to parse OCR response"}), 500
-        # Clean up the response if it's wrapped in markdown code blocks
-        if content.startswith("```json"):
-            content = content[7:-3].strip()
-        elif content.startswith("```"):
-            content = content[3:-3].strip()
-
-        import json
-        results = json.loads(content)
-        
-        # Normalize results to B/S for the frontend inputs
-        normalized = []
-        for r in results:
-            r_upper = r.upper()
-            if "BIG" in r_upper: normalized.append("B")
-            elif "SMALL" in r_upper: normalized.append("S")
-        
-        return jsonify({"status": "success", "results": normalized})
-
-    except Exception as e:
-        logger.error(f"OCR Error: {e}", exc_info=True)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
